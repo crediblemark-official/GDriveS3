@@ -1,7 +1,7 @@
 import { Elysia, t } from "elysia";
 import { eq, desc } from "drizzle-orm";
 import type { AppDatabase } from "../db/client";
-import { users, sessions, driveAccounts, buckets, objects, s3AccessKeys } from "../db/schema";
+import { users, sessions, driveAccounts, buckets, objects, s3AccessKeys, systemSettings } from "../db/schema";
 import type { TokenCipher } from "../core/crypto";
 import type { GoogleOAuth } from "../drive/oauth";
 import { DriveClient } from "../drive/client";
@@ -223,6 +223,38 @@ export function createApiRouter(
     return { success: true };
   });
 
+  router.post("/accounts/:id/sync", async ({ params, set }) => {
+    const acc = db.select().from(driveAccounts).where(eq(driveAccounts.id, params.id)).get();
+    if (!acc) {
+      set.status = 404;
+      return { error: "Akun tidak ditemukan" };
+    }
+    try {
+      const refreshToken = await cipher.decrypt(acc.refreshToken);
+      const token = await oauth.refreshAccessToken(refreshToken);
+      const info = await DriveClient.getAccountInfo(token);
+      const now = new Date().toISOString();
+
+      db.update(driveAccounts)
+        .set({
+          storageLimit: info.limit,
+          storageUsage: info.usage,
+          updatedAt: now,
+        })
+        .where(eq(driveAccounts.id, acc.id))
+        .run();
+
+      return {
+        success: true,
+        storageLimit: info.limit,
+        storageUsage: info.usage,
+      };
+    } catch (err: any) {
+      set.status = 500;
+      return { error: `Gagal sinkronisasi kuota: ${err.message}` };
+    }
+  });
+
   // 4. Buckets & File Manager
   router.get("/buckets", async () => {
     const list = db.select().from(buckets).all();
@@ -309,6 +341,37 @@ export function createApiRouter(
     return res;
   });
 
+  // Create Virtual Directory Marker
+  router.post("/buckets/:id/folder", async ({ params, body, set }) => {
+    const bucket = db.select().from(buckets).where(eq(buckets.id, params.id)).get();
+    if (!bucket) {
+      set.status = 404;
+      return { error: "Bucket tidak ditemukan" };
+    }
+    const { folderName, prefix } = body as { folderName?: string; prefix?: string };
+    if (!folderName) {
+      set.status = 400;
+      return { error: "Nama folder tidak boleh kosong" };
+    }
+    const cleanName = folderName.trim().replace(/^\/+|\/+$/g, "");
+    const basePrefix = prefix ? prefix.replace(/^\/+|\/+$/g, "") + "/" : "";
+    const folderKey = `${basePrefix}${cleanName}/`;
+
+    const emptyStream = new ReadableStream({
+      start(controller) {
+        controller.close();
+      },
+    });
+    const res = await engine.putObject(
+      bucket.name,
+      folderKey,
+      "application/x-directory",
+      "{}",
+      emptyStream
+    );
+    return { success: true, key: folderKey, res };
+  });
+
   // Browser Direct Download
   router.get("/buckets/:id/download", async ({ params, query, set }) => {
     const bucket = db.select().from(buckets).where(eq(buckets.id, params.id)).get();
@@ -376,6 +439,35 @@ export function createApiRouter(
   router.delete("/keys/:id", async ({ params }) => {
     db.delete(s3AccessKeys).where(eq(s3AccessKeys.id, params.id)).run();
     return { success: true };
+  });
+
+  // 6. Maintenance & Settings
+  router.post("/storage/gc", async () => {
+    const swept = await engine.sweepStaleMultipartUploads(24 * 60 * 60 * 1000);
+    return {
+      success: true,
+      staleUploadsSwept: swept,
+      message: `Pembersihan selesai: ${swept} upload multipart yang kedaluwarsa telah dihapus dari Google Drive.`,
+    };
+  });
+
+  router.get("/settings/balancing", async () => {
+    const row = db.select().from(systemSettings).where(eq(systemSettings.key, "balancing_strategy")).get();
+    return { strategy: row?.value || "round_robin" };
+  });
+
+  router.put("/settings/balancing", async ({ body, set }) => {
+    const { strategy } = body as { strategy?: string };
+    const valid = ["round_robin", "least_used", "fill_first", "hash"];
+    if (!strategy || !valid.includes(strategy)) {
+      set.status = 400;
+      return { error: "Strategi balancing tidak valid" };
+    }
+    db.insert(systemSettings)
+      .values({ key: "balancing_strategy", value: strategy })
+      .onConflictDoUpdate({ target: systemSettings.key, set: { value: strategy } })
+      .run();
+    return { success: true, strategy };
   });
 
   return router;

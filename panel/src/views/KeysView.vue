@@ -27,7 +27,18 @@
         </thead>
         <tbody class="divide-y divide-subtle">
           <tr v-for="k in keys" :key="k.id" class="hover:bg-surface-raised/40 transition-colors">
-            <td class="py-3 px-4 font-mono font-medium text-primary">{{ k.accessKeyId }}</td>
+            <td class="py-3 px-4 font-mono font-medium text-primary">
+              <div class="flex items-center gap-2">
+                <span>{{ k.accessKeyId }}</span>
+                <button
+                  @click="copyKey(k.accessKeyId)"
+                  title="Salin Access Key ID"
+                  class="p-1 rounded text-muted hover:text-primary hover:bg-surface-raised transition-colors inline-flex items-center"
+                >
+                  <AppIcon name="copy" class="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </td>
             <td class="py-3 px-4 text-xs text-secondary">{{ k.label }}</td>
             <td class="py-3 px-4 font-mono text-xs text-muted">{{ new Date(k.createdAt).toLocaleDateString() }}</td>
             <td class="py-3 px-4 text-right">
@@ -136,6 +147,11 @@ const createdSecret = ref<{ accessKeyId: string; secretKey: string } | null>(nul
 async function loadKeys() {
   const res = await fetch("/api/keys");
   if (res.ok) keys.value = await res.json();
+}
+
+function copyKey(val: string) {
+  navigator.clipboard.writeText(val);
+  toast.success("Access Key ID disalin ke clipboard");
 }
 
 async function createKey() {

@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "bun --watch server/src/index.ts",
+    "dev": "bun --watch server/index.ts",
     "dev:panel": "vite panel",
     "build:panel": "vite build panel",
     "build": "bun run ./build.ts",

@@ -124,10 +124,21 @@ async function runTests() {
   const downloadedContent = await getRes.text();
   console.log("Isi File yang Diunduh:\n", downloadedContent);
 
-  if (downloadedContent === fileContent) {
+  // 5. HeadObject & HeadBucket
+  console.log("\n[Test 5] HeadBucket (HEAD /testos)");
+  const headBucketRes = await s3Fetch("HEAD", "/testos");
+  console.log("Status:", headBucketRes.status, headBucketRes.status === 200 ? "OK" : "FAIL");
+
+  console.log("\n[Test 6] HeadObject (HEAD /testos/halo-dunia.txt)");
+  const headObjRes = await s3Fetch("HEAD", "/testos/halo-dunia.txt");
+  console.log("Status:", headObjRes.status, headObjRes.status === 200 ? "OK" : "FAIL");
+  console.log("ETag:", headObjRes.headers.get("etag"));
+  console.log("Content-Length:", headObjRes.headers.get("content-length"));
+
+  if (downloadedContent === fileContent && headBucketRes.status === 200 && headObjRes.status === 200) {
     console.log("\n🎉 SEMUA TES S3 BERHASIL 100%! Data berhasil diunggah & dibaca langsung dari Google Drive!");
   } else {
-    console.error("\n❌ Konten file tidak cocok!");
+    console.error("\n❌ Ada tes yang tidak lolos!");
   }
 }
 

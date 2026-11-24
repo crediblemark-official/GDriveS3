@@ -33,9 +33,12 @@
                 :to="`/buckets/${b.id}`"
                 class="font-mono font-medium text-primary hover:underline flex items-center gap-2"
               >
-                <AppIcon name="folder" class="w-4 h-4 text-muted" />
-                {{ b.name }}
+                <AppIcon name="folder" class="w-4 h-4 text-brand" />
+                <span>{{ b.name }}</span>
               </RouterLink>
+              <div class="text-[10px] text-muted font-mono flex items-center gap-1 mt-0.5">
+                <span>Folder Drive: G3 Storage/{{ b.name }}/</span>
+              </div>
             </td>
             <td class="py-3 px-4 font-mono text-xs text-secondary">{{ b.objectsCount }} file</td>
             <td class="py-3 px-4 font-mono text-xs text-secondary">{{ formatBytes(b.totalSize) }}</td>

@@ -58,7 +58,15 @@
           </div>
         </div>
 
-        <div class="mt-4 pt-3 border-t border-subtle flex justify-end">
+        <div class="mt-4 pt-3 border-t border-subtle flex justify-end gap-2">
+          <button
+            @click="syncAccount(acc.id, acc.email)"
+            :disabled="syncingId === acc.id"
+            class="px-3 py-1.5 text-xs font-medium border border-subtle text-secondary hover:text-primary hover:bg-surface-raised rounded-lg transition-colors flex items-center gap-1.5"
+          >
+            <AppIcon name="refresh" class="w-3.5 h-3.5" :class="{ 'animate-spin': syncingId === acc.id }" />
+            <span>{{ syncingId === acc.id ? "Menyinkronkan..." : "Sinkronisasi Kuota" }}</span>
+          </button>
           <button
             @click="deleteAccount(acc.id, acc.email)"
             class="px-3 py-1.5 text-xs font-medium border border-danger-border text-danger hover:bg-danger-bg rounded-lg transition-colors"
@@ -125,6 +133,7 @@ import { useToast } from "../composables/useToast";
 const toast = useToast();
 const accounts = ref<any[]>([]);
 const showOauthHelp = ref(false);
+const syncingId = ref<string | null>(null);
 
 function formatBytes(bytes: number) {
   if (!bytes || bytes === 0) return "0 B";
@@ -142,6 +151,25 @@ function getPercent(usage: number, limit: number) {
 async function loadAccounts() {
   const res = await fetch("/api/accounts");
   if (res.ok) accounts.value = await res.json();
+}
+
+async function syncAccount(id: string, email: string) {
+  syncingId.value = id;
+  toast.info(`Menyinkronkan kuota ${email}...`);
+  try {
+    const res = await fetch(`/api/accounts/${id}/sync`, { method: "POST" });
+    if (res.ok) {
+      toast.success("Kuota akun berhasil disinkronkan dari Google Drive");
+      await loadAccounts();
+    } else {
+      const err = await res.json().catch(() => ({}));
+      toast.error(err.error || "Gagal sinkronisasi kuota");
+    }
+  } catch {
+    toast.error("Kesalahan jaringan saat sinkronisasi");
+  } finally {
+    syncingId.value = null;
+  }
 }
 
 async function connectAccount() {

@@ -77,6 +77,26 @@ export function xmlCompleteMultipart(bucket: string, key: string, etag: string):
 </CompleteMultipartUploadResult>`;
 }
 
+export function xmlDeleteResult(
+  deleted: string[],
+  errors: { key: string; code: string; message: string }[] = []
+): string {
+  const deletedXml = deleted
+    .map((k) => `  <Deleted>\n    <Key>${escapeXml(k)}</Key>\n  </Deleted>`)
+    .join("\n");
+  const errorsXml = errors
+    .map(
+      (e) => `  <Error>\n    <Key>${escapeXml(e.key)}</Key>\n    <Code>${escapeXml(e.code)}</Code>\n    <Message>${escapeXml(e.message)}</Message>\n  </Error>`
+    )
+    .join("\n");
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<DeleteResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
+${deletedXml}
+${errorsXml}
+</DeleteResult>`;
+}
+
 export function xmlError(code: string, message: string, resource: string): string {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Error>

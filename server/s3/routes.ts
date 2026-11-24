@@ -11,6 +11,7 @@ import {
   xmlError,
   xmlCompleteMultipart,
   xmlInitiateMultipart,
+  xmlDeleteResult,
 } from "./xml";
 
 export function createS3Router(
@@ -157,10 +158,90 @@ export function createS3Router(
     return "";
   });
 
-  // 3. Object Operations (Put, Get, Delete, Copy)
-  router.put("/:bucket/*", async ({ params, request, set }) => {
+  // HeadBucket
+  router.head("/:bucket", async ({ params, set }) => {
+    const bucketName = params.bucket;
+    const bucket = db.select().from(buckets).where(eq(buckets.name, bucketName)).get();
+    if (!bucket) {
+      set.status = 404;
+      return "";
+    }
+    set.status = 200;
+    return "";
+  });
+
+  // S3 Multi-Object Delete (POST /:bucket?delete)
+  router.post("/:bucket", async ({ params, query, request, set }) => {
+    const bucketName = params.bucket;
+    if (query.delete === undefined) {
+      set.status = 400;
+      set.headers["Content-Type"] = "application/xml";
+      return xmlError("InvalidRequest", "Operasi POST pada bucket memerlukan parameter ?delete", bucketName);
+    }
+
+    const bucket = db.select().from(buckets).where(eq(buckets.name, bucketName)).get();
+    if (!bucket) {
+      set.status = 404;
+      set.headers["Content-Type"] = "application/xml";
+      return xmlError("NoSuchBucket", "Bucket tidak ditemukan", bucketName);
+    }
+
+    const bodyText = await request.text();
+    const matches = Array.from(bodyText.matchAll(/<Key>(.*?)<\/Key>/g));
+    const keys = matches.map((m) =>
+      m[1]
+        .replace(/&lt;/g, "<")
+        .replace(/&gt;/g, ">")
+        .replace(/&amp;/g, "&")
+        .replace(/&quot;/g, '"')
+        .replace(/&apos;/g, "'")
+    );
+
+    const deleted: string[] = [];
+    const errors: { key: string; code: string; message: string }[] = [];
+
+    await Promise.all(
+      keys.map(async (key) => {
+        try {
+          await engine.deleteObject(bucketName, key);
+          deleted.push(key);
+        } catch (err: any) {
+          errors.push({ key, code: "InternalError", message: err.message });
+        }
+      })
+    );
+
+    set.headers["Content-Type"] = "application/xml";
+    return xmlDeleteResult(deleted, errors);
+  });
+
+  // 3. Object Operations (Put, Get, Delete, Copy, Multipart)
+  router.put("/:bucket/*", async ({ params, query, request, set }) => {
     const bucketName = params.bucket;
     const key = params["*"];
+
+    // S3 Multipart UploadPart (?uploadId=...&partNumber=...)
+    if (query.uploadId && query.partNumber) {
+      if (!request.body) {
+        set.status = 400;
+        set.headers["Content-Type"] = "application/xml";
+        return xmlError("IncompleteBody", "Request body kosong", key);
+      }
+      try {
+        const { etag } = await engine.uploadPart(
+          query.uploadId as string,
+          Number(query.partNumber),
+          request.body
+        );
+        set.headers["ETag"] = `"${etag}"`;
+        set.status = 200;
+        return "";
+      } catch (err: any) {
+        set.status = 500;
+        set.headers["Content-Type"] = "application/xml";
+        return xmlError("InternalError", err.message, key);
+      }
+    }
 
     // Cek apakah ini CopyObject (x-amz-copy-source header)
     const copySource = request.headers.get("x-amz-copy-source");
@@ -215,6 +296,33 @@ export function createS3Router(
     }
   });
 
+  // HeadObject
+  router.head("/:bucket/*", async ({ params, set }) => {
+    const bucketName = params.bucket;
+    const key = params["*"];
+    const bucket = db.select().from(buckets).where(eq(buckets.name, bucketName)).get();
+    if (!bucket) {
+      set.status = 404;
+      return "";
+    }
+    const obj = db
+      .select()
+      .from(objects)
+      .where(and(eq(objects.bucketId, bucket.id), eq(objects.objectKey, key)))
+      .get();
+    if (!obj) {
+      set.status = 404;
+      return "";
+    }
+    set.headers["ETag"] = `"${obj.etag}"`;
+    set.headers["Content-Type"] = obj.contentType || "application/octet-stream";
+    set.headers["Content-Length"] = String(obj.size || 0);
+    set.headers["Last-Modified"] = new Date(obj.updatedAt).toUTCString();
+    set.headers["Accept-Ranges"] = "bytes";
+    set.status = 200;
+    return "";
+  });
+
   router.get("/:bucket/*", async ({ params, request, set }) => {
     const bucketName = params.bucket;
     const key = params["*"];
@@ -243,9 +351,66 @@ export function createS3Router(
     }
   });
 
-  router.delete("/:bucket/*", async ({ params, set }) => {
+  // S3 Multipart Operations (Initiate & Complete)
+  router.post("/:bucket/*", async ({ params, query, request, set }) => {
     const bucketName = params.bucket;
     const key = params["*"];
+
+    // Initiate Multipart Upload (?uploads)
+    if (query.uploads !== undefined) {
+      const contentType = request.headers.get("content-type") || "application/octet-stream";
+      const metadata: Record<string, string> = {};
+      for (const [k, v] of request.headers.entries()) {
+        if (k.startsWith("x-amz-meta-")) metadata[k.slice(11)] = v;
+      }
+      try {
+        const uploadId = await engine.initiateMultipart(
+          bucketName,
+          key,
+          contentType,
+          JSON.stringify(metadata)
+        );
+        set.headers["Content-Type"] = "application/xml";
+        return xmlInitiateMultipart(bucketName, key, uploadId);
+      } catch (err: any) {
+        set.status = 500;
+        set.headers["Content-Type"] = "application/xml";
+        return xmlError("InternalError", err.message, key);
+      }
+    }
+
+    // Complete Multipart Upload (?uploadId=...)
+    if (query.uploadId) {
+      try {
+        const { etag } = await engine.completeMultipart(
+          bucketName,
+          key,
+          query.uploadId as string
+        );
+        set.headers["Content-Type"] = "application/xml";
+        return xmlCompleteMultipart(bucketName, key, etag);
+      } catch (err: any) {
+        set.status = 500;
+        set.headers["Content-Type"] = "application/xml";
+        return xmlError("InternalError", err.message, key);
+      }
+    }
+
+    set.status = 400;
+    set.headers["Content-Type"] = "application/xml";
+    return xmlError("InvalidRequest", "Operasi POST tidak valid", key);
+  });
+
+  router.delete("/:bucket/*", async ({ params, query, set }) => {
+    const bucketName = params.bucket;
+    const key = params["*"];
+
+    // S3 Abort Multipart Upload (?uploadId=...)
+    if (query.uploadId) {
+      await engine.abortMultipart(query.uploadId as string);
+      set.status = 204;
+      return "";
+    }
 
     await engine.deleteObject(bucketName, key);
     set.status = 204;

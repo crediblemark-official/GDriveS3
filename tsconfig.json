@@ -10,12 +10,12 @@
     "baseUrl": ".",
     "paths": {
       "@/*": ["panel/src/*"],
-      "@server/*": ["server/src/*"]
+      "@server/*": ["server/*"]
     },
     "types": ["bun-types"]
   },
   "include": [
-    "server/src/**/*",
+    "server/**/*",
     "panel/src/**/*",
     "panel/src/**/*.vue",
     "build.ts"
