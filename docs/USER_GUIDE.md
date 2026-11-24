@@ -137,3 +137,19 @@ Lalu perbarui `.env` untuk produksi:
 ```env
 G3_GOOGLE_REDIRECT_URI="https://panel.domainmu.com/api/accounts/callback"
 ```
+
+---
+
+## 6. Persistensi Database & Backup (SQLite)
+
+G3 menyimpan metadata di SQLite (`g3.db` dalam mode WAL) di direktori `G3_DATA_DIR`. Agar data tidak hilang saat redeploy:
+
+1. **Gunakan direktori permanen** di luar folder build (atau *persistent volume* jika memakai Docker):
+   ```env
+   G3_DATA_DIR=/var/lib/g3-data
+   ```
+2. **Simpan kunci enkripsi (`G3_ENCRYPTION_KEY`)**: Atur `G3_ENCRYPTION_KEY` secara eksplisit di `.env` (`openssl rand -base64 32`) atau pastikan file `<G3_DATA_DIR>/.enckey` tetap ada. Tanpa kunci ini, token Google Drive dan S3 Secret Key yang tersimpan di `g3.db` tidak dapat didekripsi.
+3. **Backup aman saat server berjalan**:
+   ```bash
+   sqlite3 /var/lib/g3-data/g3.db ".backup '/path/backup/g3.db'"
+   ```
