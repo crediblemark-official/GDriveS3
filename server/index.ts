@@ -3,6 +3,7 @@ import { cors } from "@elysiajs/cors";
 import { loadConfig } from "./core/config";
 import { TokenCipher } from "./core/crypto";
 import { logger, createHttpLogger } from "./core/logger";
+import { getS3CorsConfig } from "./core/corsConfig";
 import { initDatabase } from "./db/client";
 import * as schema from "./db/schema";
 import { GoogleOAuth } from "./drive/oauth";
@@ -56,11 +57,28 @@ async function main() {
   };
   const balancingStrategy = strategyLabels[strategyRaw] || strategyRaw;
 
-  // 4. Server 1: S3 API Listener (Port 9000)
+  // 4. Server 1: S3 API Listener (Port 9000) with Dynamic CORS Policy
   const s3Router = createS3Router(db, s3Engine, cipher);
   const s3App = new Elysia()
     .use(createHttpLogger("s3"))
-    .use(cors())
+    .onBeforeHandle(({ request, set }) => {
+      const origin = request.headers.get("origin");
+      const corsCfg = getS3CorsConfig(db);
+      const allowAll = corsCfg.allowedOrigins.includes("*");
+      const isAllowed = allowAll || (origin ? corsCfg.allowedOrigins.includes(origin) : false);
+
+      if (isAllowed) {
+        set.headers["Access-Control-Allow-Origin"] = allowAll ? "*" : (origin || "*");
+        set.headers["Access-Control-Allow-Methods"] = corsCfg.allowedMethods.join(", ");
+        set.headers["Access-Control-Allow-Headers"] = corsCfg.allowedHeaders.join(", ");
+        set.headers["Access-Control-Max-Age"] = String(corsCfg.maxAgeSeconds);
+      }
+
+      if (request.method === "OPTIONS") {
+        set.status = 204;
+        return "";
+      }
+    })
     .use(s3Router)
     .listen({ port: config.s3Port, hostname: config.host });
 

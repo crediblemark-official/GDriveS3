@@ -176,6 +176,7 @@ const navItems = [
   { label: "Google Drive Pool", path: "/accounts", icon: "database" },
   { label: "S3 Access Keys", path: "/keys", icon: "key" },
   { label: "Log Aktivitas", path: "/logs", icon: "terminal" },
+  { label: "Pengaturan", path: "/settings", icon: "sliders" },
 ];
 
 const currentTitle = computed(() => {
@@ -186,6 +187,7 @@ const currentTitle = computed(() => {
   if (p === "/accounts") return "Google Drive Pool";
   if (p === "/keys") return "S3 Access Keys";
   if (p === "/logs") return "Log Aktivitas";
+  if (p === "/settings") return "Pengaturan";
   return "G3 Storage";
 });
 

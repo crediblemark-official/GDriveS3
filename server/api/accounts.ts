@@ -5,6 +5,7 @@ import { driveAccounts } from "../db/schema";
 import type { GoogleOAuth } from "../drive/oauth";
 import { DriveClient } from "../drive/client";
 import type { TokenCipher } from "../core/crypto";
+import { getWebhookConfig, notifyWebhookIfEnabled } from "../core/webhook";
 
 export function createAccountsRoutes(
   db: AppDatabase,
@@ -137,12 +138,31 @@ export function createAccountsRoutes(
         .where(eq(driveAccounts.id, acc.id))
         .run();
 
+      const webhookCfg = getWebhookConfig(db);
+      if (info.limit > 0) {
+        const pct = Math.round((info.usage / info.limit) * 100);
+        if (pct >= webhookCfg.thresholdPercent) {
+          void notifyWebhookIfEnabled(
+            db,
+            "quota_warning",
+            `Kuota Google Drive ${acc.email} mencapai ${pct}% (batas ${webhookCfg.thresholdPercent}%)`,
+            { email: acc.email, usagePercent: pct }
+          );
+        }
+      }
+
       return {
         success: true,
         storageLimit: info.limit,
         storageUsage: info.usage,
       };
     } catch (err: any) {
+      void notifyWebhookIfEnabled(
+        db,
+        "auth_error",
+        `Gagal sinkronisasi/refresh token untuk ${acc.email}: ${err.message}`,
+        { email: acc.email }
+      );
       set.status = 500;
       return { error: `Gagal sinkronisasi kuota: ${err.message}` };
     }
