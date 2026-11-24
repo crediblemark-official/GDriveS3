@@ -26,9 +26,16 @@ export class S3Engine {
 
     // 1. Pilih akun Google Drive melalui balancer
     const { account, accessToken } = await this.balancer.pickAccount(key);
-    const folderId = account.folderId || "";
+    const rootFolderId = account.folderId || "";
 
-    // 2. Buffer/Stream byte & hitung MD5 hash ETag
+    // 2. Pastikan subfolder untuk bucket ada di dalam G3 Storage
+    const bucketFolderId = await DriveClient.ensureSubfolder(
+      accessToken,
+      bucketName,
+      rootFolderId
+    );
+
+    // 3. Buffer/Stream byte & hitung MD5 hash ETag
     // Gunakan Bun CryptoHasher untuk inline MD5
     const hasher = new Bun.CryptoHasher("md5");
     let totalBytes = 0;
@@ -44,11 +51,11 @@ export class S3Engine {
 
     const countingStream = body.pipeThrough(transformStream);
 
-    // 3. Upload stream langsung ke Google Drive
-    const fileName = `${key.replace(/\//g, "_")}-${Date.now()}`;
+    // 4. Upload stream langsung ke folder bucket di Google Drive
+    const fileName = key;
     const driveFileId = await DriveClient.uploadStream(
       accessToken,
-      folderId,
+      bucketFolderId || rootFolderId,
       fileName,
       contentType,
       countingStream
@@ -183,11 +190,19 @@ export class S3Engine {
     }
 
     // Server-side copy di Google Drive tanpa transit byte!
-    const { accessToken } = await this.getAccountToken(srcObj.accountId!);
+    const { account, accessToken } = await this.getAccountToken(srcObj.accountId!);
+    const rootFolderId = account.folderId || "";
+    const targetFolderId = await DriveClient.ensureSubfolder(
+      accessToken,
+      dstBucketName,
+      rootFolderId
+    );
+
     const newDriveFileId = await DriveClient.copyFile(
       accessToken,
       srcObj.driveFileId!,
-      `${dstKey.replace(/\//g, "_")}-${Date.now()}`
+      dstKey,
+      targetFolderId || rootFolderId
     );
 
     const now = new Date().toISOString();

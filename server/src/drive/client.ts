@@ -62,6 +62,55 @@ export class DriveClient {
     return created.id;
   }
 
+  private static subfolderCache = new Map<string, string>();
+
+  static async ensureSubfolder(
+    accessToken: string,
+    subfolderName: string,
+    parentFolderId: string
+  ): Promise<string> {
+    if (!parentFolderId) return "";
+    const cacheKey = `${parentFolderId}:${subfolderName}`;
+    if (this.subfolderCache.has(cacheKey)) {
+      return this.subfolderCache.get(cacheKey)!;
+    }
+
+    const q = `name = '${subfolderName}' and '${parentFolderId}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false`;
+    const listRes = await fetch(
+      `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id,name)`,
+      { headers: { Authorization: `Bearer ${accessToken}` } }
+    );
+
+    if (listRes.ok) {
+      const data = (await listRes.json()) as { files?: { id: string }[] };
+      if (data.files && data.files.length > 0) {
+        this.subfolderCache.set(cacheKey, data.files[0].id);
+        return data.files[0].id;
+      }
+    }
+
+    // Buat subfolder untuk bucket di dalam folder induk G3 Storage
+    const createRes = await fetch("https://www.googleapis.com/drive/v3/files?fields=id", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        name: subfolderName,
+        mimeType: "application/vnd.google-apps.folder",
+        parents: [parentFolderId],
+      }),
+    });
+
+    if (!createRes.ok) {
+      throw new Error(`Gagal membuat folder bucket ${subfolderName}: ${await createRes.text()}`);
+    }
+    const created = (await createRes.json()) as { id: string };
+    this.subfolderCache.set(cacheKey, created.id);
+    return created.id;
+  }
+
   static async uploadStream(
     accessToken: string,
     folderId: string,
