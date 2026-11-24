@@ -88,5 +88,54 @@ export function createAuthRoutes(db: AppDatabase) {
     };
   });
 
+  // Change Password
+  router.post("/auth/change-password", async ({ body, cookie: { g3_session }, set }) => {
+    const token = typeof g3_session.value === "string" ? g3_session.value : "";
+    if (!token) {
+      set.status = 401;
+      return { error: "Unauthorized" };
+    }
+
+    const sess = db.select().from(sessions).where(eq(sessions.token, token)).get();
+    if (!sess || new Date(sess.expiresAt) < new Date()) {
+      set.status = 401;
+      return { error: "Session expired" };
+    }
+
+    const user = db.select().from(users).where(eq(users.id, sess.userId)).get();
+    if (!user) {
+      set.status = 401;
+      return { error: "User not found" };
+    }
+
+    const { currentPassword, newPassword } = body as {
+      currentPassword?: string;
+      newPassword?: string;
+    };
+    if (!currentPassword || !newPassword) {
+      set.status = 400;
+      return { error: "Password lama dan baru wajib diisi" };
+    }
+    if (newPassword.length < 8) {
+      set.status = 400;
+      return { error: "Password baru minimal 8 karakter" };
+    }
+    if (!Bun.password.verifySync(currentPassword, user.passwordHash)) {
+      set.status = 400;
+      return { error: "Password lama tidak sesuai" };
+    }
+
+    db.update(users)
+      .set({
+        passwordHash: Bun.password.hashSync(newPassword),
+        mustChangePassword: 0,
+        updatedAt: new Date().toISOString(),
+      })
+      .where(eq(users.id, user.id))
+      .run();
+
+    return { success: true };
+  });
+
   return router;
 }

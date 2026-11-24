@@ -8,6 +8,7 @@ import { createAccountsRoutes } from "./accounts";
 import { createBucketsRoutes } from "./buckets";
 import { createKeysRoutes } from "./keys";
 import { createSettingsRoutes } from "./settings";
+import { createLogsRoutes } from "./logs";
 
 export function createApiRouter(
   db: AppDatabase,
@@ -20,5 +21,6 @@ export function createApiRouter(
     .use(createAccountsRoutes(db, oauth, cipher))
     .use(createBucketsRoutes(db, cipher, engine))
     .use(createKeysRoutes(db, cipher))
-    .use(createSettingsRoutes(db, engine));
+    .use(createSettingsRoutes(db, engine))
+    .use(createLogsRoutes());
 }

@@ -1074,6 +1074,43 @@
       <path d="M2.05 2.05h2l2.66 12.42a2 2 0 0 0 2 1.58h9.78a2 2 0 0 0 1.95-1.57l1.65-7.43H5.12" />
     </g>
 
+    <!-- Folder -->
+    <g v-else-if="name === 'folder'">
+      <path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z" :fill="duotone ? 'currentColor' : 'none'" :fill-opacity="duotone ? '0.12' : '0'" />
+    </g>
+
+    <!-- Database / Storage Pool -->
+    <g v-else-if="name === 'database'">
+      <ellipse cx="12" cy="5" rx="9" ry="3" :fill="duotone ? 'currentColor' : 'none'" :fill-opacity="duotone ? '0.15' : '0'" />
+      <path d="M3 5v14a9 3 0 0 0 18 0V5" />
+      <path d="M3 12a9 3 0 0 0 18 0" />
+    </g>
+
+    <!-- File -->
+    <g v-else-if="name === 'file'">
+      <path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z" :fill="duotone ? 'currentColor' : 'none'" :fill-opacity="duotone ? '0.1' : '0'" />
+      <path d="M14 2v4a2 2 0 0 0 2 2h4" />
+    </g>
+
+    <!-- Log Out -->
+    <g v-else-if="name === 'log-out' || name === 'logout'">
+      <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+      <polyline points="16 17 21 12 16 7" />
+      <line x1="21" y1="12" x2="9" y2="12" />
+    </g>
+
+    <!-- Lock / Password -->
+    <g v-else-if="name === 'lock'">
+      <rect width="18" height="11" x="3" y="11" rx="2" ry="2" :fill="duotone ? 'currentColor' : 'none'" :fill-opacity="duotone ? '0.12' : '0'" />
+      <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+    </g>
+
+    <!-- Terminal / Logs -->
+    <g v-else-if="name === 'terminal'">
+      <polyline points="4 17 10 11 4 5" />
+      <line x1="12" y1="19" x2="20" y2="19" />
+    </g>
+
     <!-- Default Fallback: Generic Dot -->
     <g v-else>
       <circle cx="12" cy="12" r="6" />

@@ -40,6 +40,56 @@ export interface BannerInfo {
   balancingStrategy?: string;
 }
 
+export interface LogEntry {
+  id: string;
+  timestamp: string;
+  service: string;
+  level: "info" | "success" | "warn" | "error";
+  method?: string;
+  path?: string;
+  status?: number;
+  durationMs?: number;
+  message?: string;
+}
+
+const MAX_LOG_ENTRIES = 500;
+const logBuffer: LogEntry[] = [];
+
+function pushLog(entry: Omit<LogEntry, "id" | "timestamp">) {
+  logBuffer.unshift({
+    id: crypto.randomUUID(),
+    timestamp: new Date().toISOString(),
+    ...entry,
+  });
+  if (logBuffer.length > MAX_LOG_ENTRIES) {
+    logBuffer.length = MAX_LOG_ENTRIES;
+  }
+}
+
+export function getLogs(filter?: { service?: string; level?: string; q?: string }): LogEntry[] {
+  let items = logBuffer;
+  if (filter?.service && filter.service !== "all") {
+    items = items.filter((e) => e.service === filter.service);
+  }
+  if (filter?.level && filter.level !== "all") {
+    items = items.filter((e) => e.level === filter.level);
+  }
+  if (filter?.q) {
+    const q = filter.q.toLowerCase();
+    items = items.filter(
+      (e) =>
+        (e.path && e.path.toLowerCase().includes(q)) ||
+        (e.message && e.message.toLowerCase().includes(q)) ||
+        (e.method && e.method.toLowerCase().includes(q))
+    );
+  }
+  return items;
+}
+
+export function clearLogs(): void {
+  logBuffer.length = 0;
+}
+
 function timestamp(): string {
   const now = new Date();
   return (
@@ -94,18 +144,23 @@ function colorDuration(ms: number): string {
 
 export const logger = {
   info(service: string, msg: string) {
+    pushLog({ service, level: "info", message: msg });
     console.log(`${timestamp()} ${ansi.cyan}[${service.padEnd(7, " ")}]${ansi.reset} ${msg}`);
   },
 
   success(service: string, msg: string) {
+    pushLog({ service, level: "success", message: msg });
     console.log(`${timestamp()} ${ansi.green}[${service.padEnd(7, " ")}]${ansi.reset} ${ansi.bold}${msg}${ansi.reset}`);
   },
 
   warn(service: string, msg: string) {
+    pushLog({ service, level: "warn", message: msg });
     console.log(`${timestamp()} ${ansi.yellow}[${service.padEnd(7, " ")}]${ansi.reset} ${msg}`);
   },
 
   error(service: string, msg: string, err?: any) {
+    const detail = err ? `${msg} (${err?.message || String(err)})` : msg;
+    pushLog({ service, level: "error", message: detail });
     console.error(
       `${timestamp()} ${ansi.brightRed}[${service.padEnd(7, " ")}] ERROR:${ansi.reset} ${msg}`,
       err ? err : ""
@@ -188,9 +243,21 @@ export function createHttpLogger(serviceName: "s3" | "api" | "panel") {
         const t0 = requestTimers.get(request) || performance.now();
         requestTimers.delete(request);
         const duration = performance.now() - t0;
+        const statusCode = Number(set.status || 200);
+
+        if (!(path === "/api/logs" && request.method === "GET")) {
+          pushLog({
+            service: serviceName,
+            level: statusCode >= 500 ? "error" : statusCode >= 400 ? "warn" : "info",
+            method: request.method,
+            path,
+            status: statusCode,
+            durationMs: Number(duration.toFixed(1)),
+          });
+        }
 
         const method = colorMethod(request.method);
-        const status = colorStatus(set.status || 200);
+        const status = colorStatus(statusCode);
         const dur = colorDuration(duration);
 
         console.log(

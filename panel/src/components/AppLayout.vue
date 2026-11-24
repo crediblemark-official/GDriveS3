@@ -39,17 +39,21 @@
 
       <!-- Bottom Profile / Info -->
       <div class="p-3 border-t border-subtle space-y-2 shrink-0">
-        <div class="p-2 rounded-lg bg-surface-raised/60 border border-subtle flex items-center justify-between">
-          <div class="flex items-center gap-2 overflow-hidden">
+        <div class="p-2 rounded-lg bg-surface-raised/60 border border-subtle flex items-center justify-between gap-1">
+          <button
+            @click="showChangePassword = true"
+            title="Ubah Password Admin"
+            class="flex items-center gap-2 overflow-hidden text-left flex-1 rounded-md hover:bg-surface-raised p-1 -m-1 transition-colors"
+          >
             <div class="w-6 h-6 rounded-full bg-brand/10 flex items-center justify-center text-xs font-mono font-semibold text-primary shrink-0">
               A
             </div>
             <div class="truncate text-xs text-secondary font-mono">admin@g3.local</div>
-          </div>
+          </button>
           <button
             @click="logout"
             title="Keluar"
-            class="text-muted hover:text-danger p-1 rounded-md hover:bg-danger-bg transition-colors"
+            class="text-muted hover:text-danger p-1 rounded-md hover:bg-danger-bg transition-colors shrink-0"
           >
             <AppIcon name="log-out" class="w-4 h-4" />
           </button>
@@ -118,7 +122,14 @@
           <span>{{ item.label }}</span>
         </RouterLink>
 
-        <div class="pt-4 border-t border-subtle">
+        <div class="pt-4 border-t border-subtle space-y-1">
+          <button
+            @click="showMobileMenu = false; showChangePassword = true"
+            class="w-full flex items-center gap-3 px-3 py-2.5 text-sm text-secondary font-medium rounded-lg hover:bg-surface-raised transition-colors"
+          >
+            <AppIcon name="lock" class="w-4 h-4 text-muted" />
+            <span>Ubah Password</span>
+          </button>
           <button
             @click="logout"
             class="w-full flex items-center gap-3 px-3 py-2.5 text-sm text-danger font-medium rounded-lg hover:bg-danger-bg transition-colors"
@@ -129,6 +140,9 @@
         </div>
       </div>
     </BottomSheet>
+
+    <!-- Change Password Modal -->
+    <ChangePasswordModal v-if="showChangePassword" @close="showChangePassword = false" />
 
     <!-- Global Undo Toast System -->
     <AppToast />
@@ -141,12 +155,14 @@ import { useRouter, useRoute } from "vue-router";
 import AppIcon from "./AppIcon.vue";
 import AppToast from "./AppToast.vue";
 import BottomSheet from "./BottomSheet.vue";
+import ChangePasswordModal from "./ChangePasswordModal.vue";
 import { useTheme } from "../composables/useTheme";
 
 const router = useRouter();
 const route = useRoute();
 const { isDark, toggle, initTheme } = useTheme();
 const showMobileMenu = ref(false);
+const showChangePassword = ref(false);
 
 onMounted(() => {
   initTheme();
@@ -157,6 +173,7 @@ const navItems = [
   { label: "Buckets & File", path: "/buckets", icon: "folder" },
   { label: "Google Drive Pool", path: "/accounts", icon: "database" },
   { label: "S3 Access Keys", path: "/keys", icon: "key" },
+  { label: "Log Aktivitas", path: "/logs", icon: "terminal" },
 ];
 
 const currentTitle = computed(() => {
@@ -166,6 +183,7 @@ const currentTitle = computed(() => {
   if (p.startsWith("/buckets/")) return "File Manager";
   if (p === "/accounts") return "Google Drive Pool";
   if (p === "/keys") return "S3 Access Keys";
+  if (p === "/logs") return "Log Aktivitas";
   return "G3 Storage";
 });
 
