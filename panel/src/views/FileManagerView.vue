@@ -76,22 +76,50 @@
         </button>
       </div>
 
-      <!-- Drag & Drop Zone -->
-      <div
-        @dragover.prevent="isDragging = true"
-        @dragleave.prevent="isDragging = false"
-        @drop.prevent="handleDrop"
-        :class="[
-          'px-4 py-2 border border-dashed rounded-lg transition-all text-center flex items-center justify-center gap-2 text-xs',
-          isDragging
-            ? 'border-brand bg-brand-subtle text-primary ring-1 ring-brand'
-            : 'border-subtle bg-surface text-muted hover:border-border-strong',
-        ]"
-      >
-        <AppIcon name="upload" class="w-3.5 h-3.5 shrink-0" />
-        <span class="text-[11px]">
-          Tarik & letakkan file untuk mengunggah ke <strong>{{ currentPrefix ? `/${currentPrefix}` : "root" }}</strong>
-        </span>
+      <!-- Drag & Drop Zone + Opt-in Image Optimization -->
+      <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+        <div class="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-subtle bg-surface text-xs">
+          <label class="inline-flex items-center gap-1.5 cursor-pointer select-none">
+            <input
+              v-model="imageOpt.enabled"
+              type="checkbox"
+              class="w-3.5 h-3.5 rounded border-subtle accent-neutral-900 dark:accent-white"
+            />
+            <span class="font-medium text-primary">Optimasi Gambar</span>
+          </label>
+          <template v-if="imageOpt.enabled">
+            <select
+              v-model.number="imageOpt.maxWidth"
+              aria-label="Resolusi Maksimal"
+              class="bg-canvas border border-subtle rounded px-1.5 py-0.5 text-[11px] font-mono text-primary focus:outline-none"
+            >
+              <option :value="0">Resolusi Asli</option>
+              <option :value="1920">Maks 1920px</option>
+              <option :value="1280">Maks 1280px</option>
+            </select>
+            <label class="inline-flex items-center gap-1 cursor-pointer text-[11px] font-mono text-secondary">
+              <input v-model="imageOpt.toWebp" type="checkbox" class="w-3 h-3 accent-neutral-900 dark:accent-white" />
+              <span>WebP</span>
+            </label>
+          </template>
+        </div>
+
+        <div
+          @dragover.prevent="isDragging = true"
+          @dragleave.prevent="isDragging = false"
+          @drop.prevent="handleDrop"
+          :class="[
+            'px-4 py-2 border border-dashed rounded-lg transition-all text-center flex items-center justify-center gap-2 text-xs',
+            isDragging
+              ? 'border-brand bg-brand-subtle text-primary ring-1 ring-brand'
+              : 'border-subtle bg-surface text-muted hover:border-border-strong',
+          ]"
+        >
+          <AppIcon name="upload" class="w-3.5 h-3.5 shrink-0" />
+          <span class="text-[11px]">
+            Tarik & letakkan file ke <strong>{{ currentPrefix ? `/${currentPrefix}` : "root" }}</strong>
+          </span>
+        </div>
       </div>
     </div>
 
@@ -298,6 +326,7 @@ import FilePreviewModal from "../components/FilePreviewModal.vue";
 import PresignModal from "../components/PresignModal.vue";
 import { useToast } from "../composables/useToast";
 import { formatBytes } from "../lib/format";
+import { optimizeImageFile } from "../lib/imageOptimizer";
 
 const route = useRoute();
 const toast = useToast();
@@ -314,6 +343,12 @@ const isDragging = ref(false);
 const showCreateFolderModal = ref(false);
 const previewItem = ref<any | null>(null);
 const presignKey = ref<string | null>(null);
+const imageOpt = ref({
+  enabled: false,
+  maxWidth: 1920,
+  quality: 0.85,
+  toWebp: true,
+});
 
 const breadcrumbs = computed(() => {
   if (!currentPrefix.value) return [];
@@ -515,9 +550,12 @@ async function uploadFiles(files: File[]) {
   toast.info(`Mengunggah ${files.length} file ke Google Drive...`);
 
   let successCount = 0;
-  for (const file of files) {
+  let totalSavedBytes = 0;
+  for (const rawFile of files) {
     try {
-      await uploadFileObject(file);
+      const optRes = await optimizeImageFile(rawFile, imageOpt.value);
+      totalSavedBytes += optRes.savedBytes;
+      await uploadFileObject(optRes.file);
       successCount++;
     } catch (err: any) {
       toast.error(err.message);
@@ -525,7 +563,8 @@ async function uploadFiles(files: File[]) {
   }
 
   if (successCount > 0) {
-    toast.success(`${successCount} file berhasil diunggah`);
+    const savedSuffix = totalSavedBytes > 0 ? ` (hemat ${formatBytes(totalSavedBytes)})` : "";
+    toast.success(`${successCount} file berhasil diunggah${savedSuffix}`);
     await loadData();
   }
   uploading.value = false;
