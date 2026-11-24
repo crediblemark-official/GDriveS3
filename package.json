@@ -1,0 +1,35 @@
+{
+  "name": "g3",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun --watch server/src/index.ts",
+    "dev:panel": "vite panel",
+    "build:panel": "vite build panel",
+    "build": "bun run ./build.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@elysiajs/cors": "^1.2.0",
+    "@elysiajs/static": "^1.2.0",
+    "clsx": "^2.1.1",
+    "drizzle-orm": "^0.38.4",
+    "elysia": "^1.2.14",
+    "tailwind-merge": "^3.0.1",
+    "vue": "^3.5.13",
+    "vue-router": "^4.5.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.0.0",
+    "@types/bun": "latest",
+    "@types/node": "^22.10.7",
+    "@vitejs/plugin-vue": "^5.2.1",
+    "drizzle-kit": "^0.30.2",
+    "tailwindcss": "^4.0.0",
+    "typescript": "^5.7.3",
+    "vite": "^6.1.0",
+    "vue-tsc": "^2.2.0"
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "compilerOptions": {
+    "target": "ESNext",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ESNext", "DOM", "DOM.Iterable"],
+    "strict": true,
+    "skipLibCheck": true,
+    "jsx": "preserve",
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["panel/src/*"],
+      "@server/*": ["server/src/*"]
+    },
+    "types": ["bun-types"]
+  },
+  "include": [
+    "server/src/**/*",
+    "panel/src/**/*",
+    "panel/src/**/*.vue",
+    "build.ts"
+  ]
+}
