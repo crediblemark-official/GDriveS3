@@ -1,9 +1,9 @@
 <template>
-  <div class="min-h-screen bg-canvas text-primary flex flex-col md:flex-row antialiased">
-    <!-- Desktop Sidebar (Docked Swiss Hairline Grid) -->
-    <aside class="hidden md:flex flex-col w-64 border-r border-subtle bg-surface select-none shrink-0">
+  <div class="h-screen w-full bg-canvas text-primary flex flex-col md:flex-row antialiased overflow-hidden">
+    <!-- Desktop Sidebar (Docked Swiss Hairline Grid - Sticky Viewport Height) -->
+    <aside class="hidden md:flex flex-col w-64 border-r border-subtle bg-surface select-none shrink-0 h-screen sticky top-0 z-30">
       <!-- Brand & Abstract Geometric Mark -->
-      <div class="h-14 px-4 flex items-center justify-between border-b border-subtle">
+      <div class="h-14 px-4 flex items-center justify-between border-b border-subtle shrink-0">
         <div class="flex items-center gap-2.5">
           <div class="w-8 h-8 rounded-lg bg-neutral-900 text-white dark:bg-white dark:text-neutral-950 flex items-center justify-center shadow-2xs">
             <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -38,7 +38,7 @@
       </nav>
 
       <!-- Bottom Profile / Info -->
-      <div class="p-3 border-t border-subtle space-y-2">
+      <div class="p-3 border-t border-subtle space-y-2 shrink-0">
         <div class="p-2 rounded-lg bg-surface-raised/60 border border-subtle flex items-center justify-between">
           <div class="flex items-center gap-2 overflow-hidden">
             <div class="w-6 h-6 rounded-full bg-brand/10 flex items-center justify-center text-xs font-mono font-semibold text-primary shrink-0">
@@ -58,9 +58,9 @@
     </aside>
 
     <!-- Main Content Area with Header-First Chrome -->
-    <div class="flex-1 flex flex-col min-w-0 min-h-screen">
+    <div class="flex-1 flex flex-col min-w-0 h-screen overflow-hidden">
       <!-- Universal Sticky Top Header (Single Source of Truth) -->
-      <header class="h-14 border-b border-subtle bg-surface sticky top-0 z-20 px-4 sm:px-6 flex items-center justify-between">
+      <header class="h-14 shrink-0 border-b border-subtle bg-surface sticky top-0 z-20 px-4 sm:px-6 flex items-center justify-between">
         <div class="flex items-center gap-3 min-w-0">
           <button
             @click="showMobileMenu = !showMobileMenu"
