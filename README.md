@@ -5,23 +5,23 @@
 
 ---
 
-## Fitur Utama
+## Key Features
 
-- **S3 Compatible API (`:9000`)**: Mendukung AWS Signature V4 (`Authorization` header & Presigned URL), `ListBuckets`, `CreateBucket`, `DeleteBucket`, `HeadBucket`, `PutObject`, `GetObject` (byte-range streaming), `HeadObject`, `CopyObject`, `DeleteObject`, `Multi-Object Delete`, dan **S3 Multipart Upload**.
-- **Google Drive Storage Pool**: Gabungkan beberapa akun Google Drive menjadi satu pool penyimpanan dengan strategi penyeimbang (*Round Robin*, *Least Used*, *Fill First*, *Hash Key*) serta pemetaan folder rapi `GDriveS3/<bucket>/`.
-- **Zero Local Object Storage**: File di-stream langsung ke Google Drive API v3 secara *resumable*; hanya metadata yang disimpan di SQLite lokal (`gdrives3-data/gdrives3.db`).
-- **Keamanan Terenkripsi**: Refresh token OAuth dan Secret Access Key dienkripsi di database dengan **AES-256-GCM**.
-- **Admin Web Panel (`:8787`)**: File Manager dengan navigasi folder virtual, pratinjau file, *sliced multipart upload* (>10 MB), generator Presigned URL 1-klik, dan pemantau kuota akun.
+- **S3-Compatible API (`:9000`)**: Supports AWS Signature V4 (`Authorization` header & Presigned URLs), `ListBuckets`, `CreateBucket`, `DeleteBucket`, `HeadBucket`, `PutObject`, `GetObject` (byte-range streaming), `HeadObject`, `CopyObject`, `DeleteObject`, `Multi-Object Delete`, and **S3 Multipart Upload**.
+- **Google Drive Storage Pool**: Combine multiple Google Drive accounts into a single storage pool with load-balancing strategies (*Round Robin*, *Least Used*, *Fill First*, *Hash Key*) and clean folder mapping under `GDriveS3/<bucket>/`.
+- **Zero Local Object Storage**: Files are streamed directly to Google Drive API v3 via resumable uploads; only metadata is stored in local SQLite (`gdrives3-data/gdrives3.db`).
+- **Encrypted at Rest**: OAuth refresh tokens and S3 Secret Access Keys are encrypted in SQLite using **AES-256-GCM**.
+- **Admin Web Panel (`:8787`)**: File Manager with virtual folder navigation, file previews, *sliced multipart upload* (>10 MB), optional client-side image optimization, 1-click Presigned URL generator, webhook alerts, dynamic S3 CORS settings, and account quota monitoring.
 
 ---
 
-## Struktur Direktori
+## Directory Structure
 
 ```text
 .
 ├── server/                 # Backend (Bun + Elysia + Drizzle ORM)
-│   ├── api/                # Panel REST API (auth, accounts, buckets, keys, settings)
-│   ├── core/               # Config, AES-256-GCM cipher, & terminal logger
+│   ├── api/                # Panel REST API (auth, accounts, buckets, keys, settings, logs)
+│   ├── core/               # Config, AES-256-GCM cipher, CORS, webhook & terminal logger
 │   ├── db/                 # SQLite schema & bun:sqlite connection
 │   ├── drive/              # Google Drive OAuth2, Resumable Client, & Balancer
 │   ├── s3/                 # SigV4 auth, XML serializer, Multipart, & S3 Engine
@@ -30,14 +30,14 @@
 │   └── src/
 │       ├── components/     # AppLayout, AppIcon, BottomSheet, Modals, Snippets
 │       ├── composables/    # useTheme & useToast
-│       ├── lib/            # API client & formatters
-│       └── views/          # Dashboard, Buckets, FileManager, Accounts, Keys, Login
-├── docs/                   # Dokumentasi & VitePress Live Docs
-│   ├── .vitepress/         # Konfigurasi VitePress
-│   ├── USER_GUIDE.md       # Panduan pengguna & setup Google OAuth
-│   └── ARCHITECTURE.md     # Referensi arsitektur & kriptografi
+│       ├── lib/            # Formatters & client-side image optimizer
+│       └── views/          # Dashboard, Buckets, FileManager, Accounts, Keys, Logs, Settings, Login
+├── docs/                   # Documentation & VitePress Live Docs
+│   ├── .vitepress/         # VitePress configuration
+│   ├── USER_GUIDE.md       # User guide & Google OAuth setup
+│   └── ARCHITECTURE.md     # Architecture & cryptography reference
 ├── tests/                  # Unit & integration tests (bun test)
-├── package.json            # Single root dependencies
+├── package.json            # Root dependencies & scripts
 ├── build.ts                # Production build pipeline
 └── tsconfig.json           # Strict TypeScript configuration
 ```
@@ -46,59 +46,59 @@
 
 ## Quick Start
 
-### 1. Instalasi & Konfigurasi Environment
+### 1. Installation & Environment Setup
 ```bash
 bun install
 cp .env.example .env
 ```
-Atur kredensial **Google OAuth 2.0** di `.env` (`GDRIVES3_GOOGLE_CLIENT_ID`, `GDRIVES3_GOOGLE_CLIENT_SECRET`, `GDRIVES3_GOOGLE_REDIRECT_URI`). Lihat [Panduan Pengguna](docs/USER_GUIDE.md) untuk langkah lengkapnya.
+Configure your **Google OAuth 2.0** credentials in `.env` (`GDRIVES3_GOOGLE_CLIENT_ID`, `GDRIVES3_GOOGLE_CLIENT_SECRET`, `GDRIVES3_GOOGLE_REDIRECT_URI`). See the [User Guide](docs/USER_GUIDE.md) for step-by-step instructions.
 
-### 2. Menjalankan Mode Development
+### 2. Development Mode
 ```bash
-# Terminal 1: Backend Server (S3 di :9000 & API/Panel di :8787)
+# Terminal 1: Backend Server (S3 on :9000 & API/Panel on :8787)
 bun run dev
 
-# Terminal 2: Vite Panel HMR (di :5173 dengan proxy ke :8787)
+# Terminal 2: Vite Panel HMR (on :5173 proxied to :8787)
 bun run dev:panel
 ```
 
-### 3. Build Production
+### 3. Production Build
 ```bash
 bun run build
 ```
-Panel statis dari `panel/dist` akan otomatis disajikan oleh Elysia pada port `8787` (`http://localhost:8787`).
+The compiled static panel from `panel/dist` is automatically served by Elysia on port `8787` (`http://localhost:8787`).
 
-### 4. Dokumentasi Live (VitePress)
+### 4. Live Documentation (VitePress)
 ```bash
-# Preview dokumentasi secara lokal
+# Preview documentation locally
 bun run docs:dev
 
-# Build situs dokumentasi statis ke docs/.vitepress/dist
+# Build static documentation site to docs/.vitepress/dist
 bun run docs:build
 ```
 
 ---
 
-## Pengujian via AWS CLI
+## Testing with AWS CLI
 
-Setelah membuat **Bucket** dan **S3 Access Key** di web panel:
+After creating a **Bucket** and an **S3 Access Key** in the web panel:
 
 ```bash
 export AWS_ACCESS_KEY_ID="GDS3..."
 export AWS_SECRET_ACCESS_KEY="..."
 
-# Buat bucket
+# Create a bucket
 aws s3 mb s3://my-bucket --endpoint-url http://localhost:9000
 
-# Unggah file langsung ke Google Drive
+# Upload a file directly to Google Drive
 aws s3 cp ./file.pdf s3://my-bucket/ --endpoint-url http://localhost:9000
 
-# List isi bucket
+# List bucket contents
 aws s3 ls s3://my-bucket/ --endpoint-url http://localhost:9000
 ```
 
 ---
 
-## Lisensi
+## License
 
-Dirilis di bawah lisensi [MIT](LICENSE).
+Released under the [MIT](LICENSE) license.

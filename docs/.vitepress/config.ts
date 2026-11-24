@@ -7,16 +7,16 @@ export default defineConfig({
   cleanUrls: true,
   themeConfig: {
     nav: [
-      { text: "Beranda", link: "/" },
-      { text: "Panduan Pengguna", link: "/USER_GUIDE" },
-      { text: "Arsitektur", link: "/ARCHITECTURE" },
+      { text: "Home", link: "/" },
+      { text: "User Guide", link: "/USER_GUIDE" },
+      { text: "Architecture", link: "/ARCHITECTURE" },
     ],
     sidebar: [
       {
-        text: "Dokumentasi",
+        text: "Documentation",
         items: [
-          { text: "Panduan Pengguna", link: "/USER_GUIDE" },
-          { text: "Arsitektur Teknis", link: "/ARCHITECTURE" },
+          { text: "User Guide", link: "/USER_GUIDE" },
+          { text: "Technical Architecture", link: "/ARCHITECTURE" },
         ],
       },
     ],
@@ -25,11 +25,11 @@ export default defineConfig({
     },
     outline: {
       level: [2, 3],
-      label: "Di halaman ini",
+      label: "On this page",
     },
     docFooter: {
-      prev: "Sebelumnya",
-      next: "Berikutnya",
+      prev: "Previous",
+      next: "Next",
     },
   },
 });

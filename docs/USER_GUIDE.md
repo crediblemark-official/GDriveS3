@@ -1,25 +1,25 @@
-# Panduan Pengguna GDriveS3
+# GDriveS3 User Guide
 
-Panduan ini menjelaskan cara menyiapkan **Google Cloud OAuth 2.0**, mengoperasikan **Admin Web Panel**, menghubungkan **klien S3**, hingga men-deploy GDriveS3 ke server produksi dengan domain dan HTTPS.
+This guide walks through setting up **Google Cloud OAuth 2.0**, operating the **Admin Web Panel**, connecting **S3 clients**, and deploying GDriveS3 to production with a custom domain and HTTPS.
 
 ---
 
-## 1. Setup Google Cloud OAuth 2.0
+## 1. Google Cloud OAuth 2.0 Setup
 
-GDriveS3 membutuhkan kredensial OAuth 2.0 agar Anda bisa menautkan akun Google Drive ke dalam *storage pool*.
+GDriveS3 requires OAuth 2.0 credentials so you can link Google Drive accounts into your *storage pool*.
 
-1. Buka [Google Cloud Console](https://console.cloud.google.com/) dan buat proyek baru (atau pilih proyek yang sudah ada).
-2. Masuk ke **APIs & Services → Library**, cari **Google Drive API**, lalu klik **Enable**.
-3. Masuk ke **APIs & Services → OAuth consent screen**:
-   - Pilih **External** (atau *Internal* jika memakai Google Workspace).
-   - Isi nama aplikasi (misal `GDriveS3`) dan email dukungan.
-   - Pada bagian **Test users**, tambahkan alamat email Google yang akan ditautkan ke GDriveS3 (wajib jika status aplikasi masih *Testing*).
-4. Masuk ke **APIs & Services → Credentials → Create Credentials → OAuth client ID**:
+1. Open the [Google Cloud Console](https://console.cloud.google.com/) and create a new project (or select an existing one).
+2. Navigate to **APIs & Services → Library**, search for **Google Drive API**, and click **Enable**.
+3. Navigate to **APIs & Services → OAuth consent screen**:
+   - Choose **External** (or *Internal* if using Google Workspace).
+   - Enter an application name (e.g., `GDriveS3`) and support email.
+   - Under **Test users**, add the Google email addresses you plan to link to GDriveS3 (required while the app status is *Testing*).
+4. Navigate to **APIs & Services → Credentials → Create Credentials → OAuth client ID**:
    - Application type: **Web application**.
    - Authorized redirect URIs:
-     - Lokal: `http://localhost:8787/api/accounts/callback`
-     - Produksi (pakai domain): `https://panel.domainmu.com/api/accounts/callback`
-5. Salin **Client ID** dan **Client Secret** ke file `.env` di root proyek:
+     - Local: `http://localhost:8787/api/accounts/callback`
+     - Production (custom domain): `https://panel.yourdomain.com/api/accounts/callback`
+5. Copy the **Client ID** and **Client Secret** into your `.env` file at the project root:
 
 ```env
 GDRIVES3_GOOGLE_CLIENT_ID="xxx.apps.googleusercontent.com"
@@ -29,9 +29,9 @@ GDRIVES3_GOOGLE_REDIRECT_URI="http://localhost:8787/api/accounts/callback"
 
 ---
 
-## 2. Menjalankan & Login Pertama Kali
+## 2. Running & First Login
 
-Jalankan server dari root proyek:
+Start the server from the project root:
 
 ```bash
 bun install
@@ -39,45 +39,45 @@ bun run build:panel
 bun run dev
 ```
 
-Buka Web Panel di `http://localhost:8787` dan masuk dengan akun admin default (dapat diubah lewat `.env`):
+Open the Web Panel at `http://localhost:8787` and sign in with the default admin credentials (configurable via `.env`):
 - **Email**: `admin@gdrives3.local`
 - **Password**: `change-me-now`
 
-> **Penting:** Segera ubah `GDRIVES3_ADMIN_EMAIL` dan `GDRIVES3_ADMIN_PASSWORD` di `.env` sebelum server dibuka ke publik.
+> **Important:** Change `GDRIVES3_ADMIN_EMAIL` and `GDRIVES3_ADMIN_PASSWORD` in `.env` (or update the password in the panel) before exposing your server to the public internet.
 
 ---
 
-## 3. Alur Kerja di Web Panel
+## 3. Web Panel Workflow
 
-### A. Menautkan Akun Google Drive
-1. Buka menu **Google Drive Pool**.
-2. Klik **+ Tautkan Akun** di header kanan atas.
-3. Berikan izin akses Google Drive pada halaman login Google.
-4. Setelah berhasil, akun akan muncul di daftar beserta pemakaian kuota dan batas upload harian (`750 GB/hari` per akun Google).
+### A. Linking Google Drive Accounts
+1. Go to **Google Drive Pool**.
+2. Click **+ Tautkan Akun** (Link Account) in the top-right header.
+3. Grant Google Drive permissions on the Google consent page.
+4. Once connected, the account appears in the pool list with its storage usage and daily upload limit (`750 GB/day` per Google account).
 
-### B. Mengatur Strategi Balancer
-Pada menu **Ringkasan**, pilih strategi distribusi file untuk setiap unggahan baru:
-- **Round Robin**: Membagi unggahan secara bergantian ke semua akun aktif.
-- **Least Used**: Memprioritaskan akun dengan pemakaian ruang paling kecil.
-- **Fill First**: Mengisi satu akun hingga penuh sebelum berpindah ke akun berikutnya.
-- **Hash Key**: Memetakan nama file (*key*) secara deterministik ke akun yang sama.
+### B. Selecting a Balancing Strategy
+On the **Dashboard**, choose how new S3 uploads are distributed across linked accounts:
+- **Round Robin**: Alternates evenly across all active accounts.
+- **Least Used**: Prioritizes the account with the most free storage space.
+- **Fill First**: Fills the primary account until full before moving to the next.
+- **Hash Key**: Deterministically maps an object *key* to the same account.
 
-### C. Mengelola Bucket & File
-1. Buka menu **Buckets & File** lalu klik **+ Buat Bucket** (gunakan huruf kecil, angka, `-`, atau `.`).
-2. Setiap bucket otomatis dibuatkan folder terisolasi di Google Drive pada `GDriveS3/<nama-bucket>/`.
-3. Klik nama bucket untuk membuka **File Manager**:
-   - **Unggah File**: File berukuran `> 10 MB` otomatis dipecah menggunakan *sliced multipart upload*.
-   - **Bagikan Tautan**: Klik ikon bagikan pada baris file untuk membuat **S3 Presigned URL** (1 jam, 24 jam, atau 7 hari).
+### C. Managing Buckets & Files
+1. Open **Buckets & File** and click **+ Buat Bucket** (use lowercase letters, numbers, `-`, or `.`).
+2. Each bucket automatically gets an isolated subfolder in Google Drive at `GDriveS3/<bucket-name>/`.
+3. Click a bucket name to open the **File Manager**:
+   - **Upload Files**: Files larger than `10 MB` are automatically uploaded using *sliced multipart upload*.
+   - **Share Links**: Click the share icon on any file row to generate an **S3 Presigned URL** (1 hour, 24 hours, or 7 days).
 
-### D. Membuat S3 Access Key
-1. Buka menu **S3 Access Keys** dan klik **+ Buat Key**.
-2. Simpan **Access Key ID** dan **Secret Access Key** yang muncul — *Secret Key* hanya ditampilkan satu kali saat dibuat.
+### D. Creating S3 Access Keys
+1. Open **S3 Access Keys** and click **+ Buat Key**.
+2. Save the **Access Key ID** and **Secret Access Key** — the *Secret Key* is shown only once upon creation.
 
 ---
 
-## 4. Menghubungkan Klien S3
+## 4. Connecting S3 Clients
 
-Endpoint S3 berjalan di port `9000` (`http://localhost:9000`) dan menggunakan format **Path-Style** (`forcePathStyle: true`).
+The S3 API listens on port `9000` (`http://localhost:9000`) and uses **Path-Style** addressing (`forcePathStyle: true`).
 
 ### AWS CLI
 ```bash
@@ -117,39 +117,40 @@ const s3 = new S3Client({
 
 ---
 
-## 5. Deploy Produksi (Domain & HTTPS)
+## 5. Production Deployment (Domain & HTTPS)
 
-Untuk pemakaian lokal atau jaringan internal (LAN/Tailscale), domain **tidak wajib**. Namun untuk akses publik lewat internet, disarankan memakai **domain + HTTPS** agar Google OAuth dan kredensial S3 aman.
+For local use or private networks (LAN/Tailscale), a domain is **optional**. For public internet exposure, use a **domain with HTTPS** to protect Google OAuth callbacks and S3 credentials.
 
-Karena GDriveS3 memakai **Path-Style**, Anda **tidak butuh wildcard DNS** (`*.s3.domainmu.com`). Cukup siapkan 2 subdomain biasa dengan **Caddy**:
+Because GDriveS3 uses **Path-Style** endpoints, you **do not need wildcard DNS** (`*.s3.yourdomain.com`). Simply point two standard subdomains via **Caddy**:
 
 ```caddyfile
-panel.domainmu.com {
+panel.yourdomain.com {
     reverse_proxy localhost:8787
 }
 
-s3.domainmu.com {
+s3.yourdomain.com {
     reverse_proxy localhost:9000
 }
 ```
 
-Lalu perbarui `.env` untuk produksi:
+Then update `.env` for production:
 ```env
-GDRIVES3_GOOGLE_REDIRECT_URI="https://panel.domainmu.com/api/accounts/callback"
+GDRIVES3_GOOGLE_REDIRECT_URI="https://panel.yourdomain.com/api/accounts/callback"
+GDRIVES3_S3_PUBLIC_URL="https://s3.yourdomain.com"
 ```
 
 ---
 
-## 6. Persistensi Database & Backup (SQLite)
+## 6. Database Persistence & Backups (SQLite)
 
-GDriveS3 menyimpan metadata di SQLite (`gdrives3.db` dalam mode WAL) di direktori `GDRIVES3_DATA_DIR`. Agar data tidak hilang saat redeploy:
+GDriveS3 stores metadata in SQLite (`gdrives3.db` in WAL mode) inside `GDRIVES3_DATA_DIR`. To prevent data loss across redeployments:
 
-1. **Gunakan direktori permanen** di luar folder build (atau *persistent volume* jika memakai Docker):
+1. **Use a persistent directory** outside the build folder (or a *persistent volume* in Docker):
    ```env
    GDRIVES3_DATA_DIR=/var/lib/gdrives3-data
    ```
-2. **Simpan kunci enkripsi (`GDRIVES3_ENCRYPTION_KEY`)**: Atur `GDRIVES3_ENCRYPTION_KEY` secara eksplisit di `.env` (`openssl rand -base64 32`) atau pastikan file `<GDRIVES3_DATA_DIR>/.enckey` tetap ada. Tanpa kunci ini, token Google Drive dan S3 Secret Key yang tersimpan di `gdrives3.db` tidak dapat didekripsi.
-3. **Backup aman saat server berjalan**:
+2. **Preserve your encryption key (`GDRIVES3_ENCRYPTION_KEY`)**: Set `GDRIVES3_ENCRYPTION_KEY` explicitly in `.env` (`openssl rand -base64 32`) or keep `<GDRIVES3_DATA_DIR>/.enckey` backed up. Without this key, stored Google Drive tokens and S3 Secret Keys in `gdrives3.db` cannot be decrypted.
+3. **Safe online backup while running**:
    ```bash
    sqlite3 /var/lib/gdrives3-data/gdrives3.db ".backup '/path/backup/gdrives3.db'"
    ```

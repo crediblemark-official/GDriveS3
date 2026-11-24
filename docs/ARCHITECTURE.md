@@ -1,16 +1,16 @@
 # GDriveS3 Architecture & Technical Reference
 
-GDriveS3 adalah server penyimpanan berbasis **AWS S3-compatible API** yang menggunakan multi-akun **Google Drive** sebagai storage pool backend tak terbatas (*infinite storage pool*). Dibangun menggunakan runtime **Bun**, framework **ElysiaJS**, ORM **Drizzle SQLite**, dan antarmuka manajemen web **Vue 3 + Tailwind CSS v4**.
+GDriveS3 is an **AWS S3-compatible object storage server** backed by a multi-account **Google Drive** storage pool. It is built on the **Bun** runtime, **ElysiaJS**, **Drizzle ORM (SQLite)**, and a **Vue 3 + Tailwind CSS v4** management panel.
 
 ---
 
-## 1. Arsitektur Dual-Port Server
+## 1. Dual-Port Server Architecture
 
-Sistem menjalankan dua listener port independen dalam satu proses Bun tunggal:
+The server runs two independent HTTP listeners inside a single Bun process:
 
-```
+```text
                   ┌──────────────────────────────────────────────┐
-                  │                 Klien & Pengguna             │
+                  │               Clients & Users                │
                   └───────────────┬──────────────┬───────────────┘
                                   │              │
                    AWS S3 Traffic │              │ REST & Panel Traffic
@@ -35,74 +35,74 @@ Sistem menjalankan dua listener port independen dalam satu proses Bun tunggal:
           └───────────────────────────┘       └───────────────────────────┘
 ```
 
-1. **Port 9000 (`GDRIVES3_S3_PORT`)**: Listener murni AWS S3 API kompatibel Signature V4.
-   - Mendukung `ListBuckets`, `CreateBucket`, `DeleteBucket`, `HeadBucket`
-   - Mendukung `PutObject`, `GetObject` (dengan range streaming), `HeadObject`, `DeleteObject`, `CopyObject`
-   - Mendukung **S3 Multipart Upload** (`?uploads`, `?uploadId&partNumber`, `?uploadId`)
-   - Mendukung **Multi-Object Delete** (`POST /:bucket?delete`)
-   - Mendukung **Presigned Query URL** (`?X-Amz-Algorithm=AWS4-HMAC-SHA256&...`)
+1. **Port 9000 (`GDRIVES3_S3_PORT`)**: Pure AWS S3 API listener with Signature V4 authentication.
+   - Supports `ListBuckets`, `CreateBucket`, `DeleteBucket`, `HeadBucket`
+   - Supports `PutObject`, `GetObject` (with byte-range streaming), `HeadObject`, `DeleteObject`, `CopyObject`
+   - Supports **S3 Multipart Upload** (`?uploads`, `?uploadId&partNumber`, `?uploadId`, `ListParts`, `ListMultipartUploads`)
+   - Supports **Multi-Object Delete** (`POST /:bucket?delete`)
+   - Supports **Presigned Query URLs** (`?X-Amz-Algorithm=AWS4-HMAC-SHA256&...`) with expiration verification
 2. **Port 8787 (`GDRIVES3_PORT`)**: Web Admin Panel SPA & REST API.
-   - Manajemen Google Drive Pool (OAuth 2.0 Web flow & token refresh)
-   - S3 File Manager dengan folder virtual & breadcrumbs
-   - Pembuat S3 Access Keys (SigV4 credentials)
-   - Pengaturan strategi load balancing & Garbage Collector pembersih part upload
+   - Google Drive Pool management (OAuth 2.0 Web flow & cached token refresh)
+   - S3 File Manager with virtual folders, breadcrumbs, and optional client-side image optimization
+   - S3 Access Key management (SigV4 credentials)
+   - Load-balancing strategy controls, webhook alerts, dynamic S3 CORS settings, and Multipart Garbage Collector
 
 ---
 
-## 2. Struktur Google Drive Folder Mapping
+## 2. Google Drive Folder Mapping
 
-Setiap bucket yang dibuat di GDriveS3 dipetakan langsung menjadi subfolder rapi di dalam folder utama `GDriveS3` pada Google Drive:
+Each bucket created in GDriveS3 maps directly to a dedicated subfolder inside the root `GDriveS3` folder on Google Drive:
 
-```
-Google Drive (info.rasyiqi@gmail.com)
+```text
+Google Drive (user@gmail.com)
 └── GDriveS3/
     ├── testos/
-    │   ├── halo-dunia.txt
-    │   └── dokumen-2026/
-    │       └── laporan.pdf
+    │   ├── hello-world.txt
+    │   └── docs-2026/
+    │       └── report.pdf
     └── backup-vps/
         └── database.dump.gz
 ```
 
-Nama file asli dipertahankan sehingga Anda dapat membuka, membagikan, atau mencari file langsung dari antarmuka Google Drive resmi kapan saja.
+Original object names are preserved so you can inspect, share, or search files directly from the standard Google Drive UI at any time.
 
 ---
 
-## 3. Strategi Balancing Multi-Akun
+## 3. Multi-Account Balancing Strategies
 
-Pengguna dapat menautkan lebih dari satu akun Google Drive. Saat file baru diunggah melalui S3 API, `Balancer` memilih akun Drive tujuan berdasarkan strategi yang dipilih:
+You can link multiple Google Drive accounts to the pool. Whenever a new object is uploaded via the S3 API, `Balancer` selects the target Drive account according to the active strategy:
 
-| Strategi | ID | Deskripsi |
+| Strategy | ID | Description |
 |---|---|---|
-| **Round Robin** | `round_robin` | Bergantian merata ke setiap akun Google aktif yang belum mencapai batas harian (750 GB/hari). |
-| **Least Used** | `least_used` | Mengalokasikan file ke akun dengan penggunaan kuota terkecil saat ini. |
-| **Fill First** | `fill_first` | Mengisi akun utama sampai mendekati batas kuota sebelum beralih ke akun berikutnya. |
-| **Hash Key** | `hash` | Melakukan hash deterministik atas nama file sehingga key yang sama selalu masuk ke akun yang sama. |
+| **Round Robin** | `round_robin` | Distributes uploads evenly across all active accounts below the 750 GB/day upload limit. |
+| **Least Used** | `least_used` | Prioritizes the account with the most remaining free quota. |
+| **Fill First** | `fill_first` | Fills the oldest connected account up to its storage limit before moving to the next. |
+| **Hash Key** | `hash` | Deterministically hashes the object key so the same key consistently maps to the same account. |
 
 ---
 
-## 4. Keamanan & Kriptografi Data
+## 4. Security & Cryptography
 
-- **Token at Rest**: Refresh token Google Drive dan Secret Access Key S3 dienkripsi dalam SQLite menggunakan **AES-256-GCM** via Web Crypto API native Bun.
-- **SigV4 Constant-Time Verification**: Verifikasi tanda tangan HMAC-SHA256 diverifikasi menggunakan XOR constant-time comparison untuk mencegah *timing attack*.
-- **No Foreign Keys DB**: Integritas data dikelola di level aplikasi (Application-Level Integrity) untuk mencegah lock contention dan memudahkan backup SQLite.
+- **Tokens at Rest**: Google Drive refresh tokens and S3 Secret Access Keys are encrypted in SQLite using **AES-256-GCM** via Bun's native Web Crypto API.
+- **SigV4 Constant-Time Verification**: HMAC-SHA256 signatures are verified using XOR constant-time comparison to prevent timing attacks, and presigned URLs enforce `X-Amz-Date` + `X-Amz-Expires` expiration.
+- **Application-Level Integrity**: Foreign keys are managed at the application layer in SQLite WAL mode with unique `(bucket_id, object_key)` indexing to minimize lock contention and simplify hot backups.
 
 ---
 
-## 5. Contoh Integrasi Langsung (Show, Don't Tell)
+## 5. Integration Examples
 
 ### AWS CLI
 ```bash
 export AWS_ACCESS_KEY_ID="GDS3_YOUR_ACCESS_KEY_ID"
 export AWS_SECRET_ACCESS_KEY="GDS3_YOUR_SECRET_KEY"
 
-# List semua bucket
+# List all buckets
 aws s3 ls --endpoint-url http://localhost:9000
 
-# Unggah file
+# Upload a file
 aws s3 cp backup.tar.gz s3://testos/backup.tar.gz --endpoint-url http://localhost:9000
 
-# Sinkronisasi folder lokal ke S3
+# Sync a local directory to S3
 aws s3 sync ./my-photos s3://testos/my-photos --endpoint-url http://localhost:9000
 ```
 
@@ -120,7 +120,7 @@ const s3 = new S3Client({
   forcePathStyle: true,
 });
 
-// Unggah
+// Upload
 await s3.send(new PutObjectCommand({
   Bucket: "testos",
   Key: "data.json",
@@ -141,7 +141,7 @@ s3 = boto3.client(
     region_name='us-east-1'
 )
 
-# List bucket
+# List buckets
 response = s3.list_buckets()
 for bucket in response['Buckets']:
     print(bucket['Name'])
