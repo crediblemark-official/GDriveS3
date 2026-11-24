@@ -7,7 +7,7 @@ export function createAuthRoutes(db: AppDatabase) {
   const router = new Elysia();
 
   // Login
-  router.post("/auth/login", async ({ body, cookie: { g3_session }, request, set }) => {
+  router.post("/auth/login", async ({ body, cookie: { gdrives3_session }, request, set }) => {
     const { email, password } = body as { email?: string; password?: string };
     if (!email || !password) {
       set.status = 400;
@@ -25,7 +25,7 @@ export function createAuthRoutes(db: AppDatabase) {
     const isHttps =
       new URL(request.url).protocol === "https:" ||
       request.headers.get("x-forwarded-proto") === "https" ||
-      process.env.G3_COOKIE_SECURE === "true";
+      process.env.GDRIVES3_COOKIE_SECURE === "true";
 
     db.insert(sessions).values({
       id: crypto.randomUUID(),
@@ -35,7 +35,7 @@ export function createAuthRoutes(db: AppDatabase) {
       createdAt: new Date().toISOString(),
     }).run();
 
-    g3_session.set({
+    gdrives3_session.set({
       value: token,
       httpOnly: true,
       sameSite: "lax",
@@ -56,18 +56,18 @@ export function createAuthRoutes(db: AppDatabase) {
   });
 
   // Logout
-  router.post("/auth/logout", async ({ cookie: { g3_session } }) => {
-    const token = typeof g3_session.value === "string" ? g3_session.value : "";
+  router.post("/auth/logout", async ({ cookie: { gdrives3_session } }) => {
+    const token = typeof gdrives3_session.value === "string" ? gdrives3_session.value : "";
     if (token) {
       db.delete(sessions).where(eq(sessions.token, token)).run();
-      g3_session.remove();
+      gdrives3_session.remove();
     }
     return { success: true };
   });
 
   // Current User Session
-  router.get("/me", async ({ cookie: { g3_session }, set }) => {
-    const token = typeof g3_session.value === "string" ? g3_session.value : "";
+  router.get("/me", async ({ cookie: { gdrives3_session }, set }) => {
+    const token = typeof gdrives3_session.value === "string" ? gdrives3_session.value : "";
     if (!token) {
       set.status = 401;
       return { error: "Unauthorized" };
@@ -97,8 +97,8 @@ export function createAuthRoutes(db: AppDatabase) {
   });
 
   // Change Password
-  router.post("/auth/change-password", async ({ body, cookie: { g3_session }, set }) => {
-    const token = typeof g3_session.value === "string" ? g3_session.value : "";
+  router.post("/auth/change-password", async ({ body, cookie: { gdrives3_session }, set }) => {
+    const token = typeof gdrives3_session.value === "string" ? gdrives3_session.value : "";
     if (!token) {
       set.status = 401;
       return { error: "Unauthorized" };

@@ -5,7 +5,7 @@ import { eq } from "drizzle-orm";
 import * as schema from "./schema";
 
 export function initDatabase(dataDir: string, adminEmail: string, adminPassword: string) {
-  const dbPath = join(dataDir, "g3.db");
+  const dbPath = join(dataDir, "gdrives3.db");
   const sqlite = new Database(dbPath, { create: true });
   
   // Pragmas untuk performa tinggi dan konkurensi di SQLite
@@ -139,7 +139,7 @@ export function initDatabase(dataDir: string, adminEmail: string, adminPassword:
       createdAt: now,
       updatedAt: now,
     }).run();
-    console.log(`[g3-db] Seeded initial admin account: ${adminEmail}`);
+    console.log(`[gdrives3-db] Seeded initial admin account: ${adminEmail}`);
   }
 
   return { db, sqlite };

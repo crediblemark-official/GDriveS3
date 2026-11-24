@@ -11,7 +11,7 @@ describe("Webhook & S3 CORS Settings", () => {
   let db: ReturnType<typeof initDatabase>["db"];
 
   beforeAll(() => {
-    tempDir = mkdtempSync(join(tmpdir(), "g3-settings-test-"));
+    tempDir = mkdtempSync(join(tmpdir(), "gdrives3-settings-test-"));
     db = initDatabase(tempDir, "admin@test.local", "secret123").db;
   });
 

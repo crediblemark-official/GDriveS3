@@ -16,7 +16,7 @@ describe("Storage Balancer (Real Class)", () => {
   let balancer: Balancer;
 
   beforeAll(async () => {
-    tempDir = mkdtempSync(join(tmpdir(), "g3-balancer-test-"));
+    tempDir = mkdtempSync(join(tmpdir(), "gdrives3-balancer-test-"));
     db = initDatabase(tempDir, "admin@test.local", "secret123").db;
     const key = Buffer.from(new Uint8Array(32).fill(9)).toString("base64");
     cipher = await TokenCipher.init(key, tempDir);

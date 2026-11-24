@@ -34,7 +34,7 @@
                 <span class="truncate">{{ b.name }}</span>
               </RouterLink>
               <div class="text-[11px] text-muted font-mono flex items-center gap-1.5 mt-0.5 truncate">
-                <span>G3 Storage/{{ b.name }}/</span>
+                <span>GDriveS3/{{ b.name }}/</span>
                 <span class="md:hidden">&bull;</span>
                 <span class="md:hidden">{{ b.objectsCount }} file</span>
                 <span class="md:hidden">&bull;</span>

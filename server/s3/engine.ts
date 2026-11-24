@@ -71,7 +71,7 @@ export class S3Engine {
     const { account, accessToken } = await this.balancer.pickAccount(key);
     const rootFolderId = account.folderId || "";
 
-    // 2. Pastikan subfolder untuk bucket ada di dalam G3 Storage
+    // 2. Pastikan subfolder untuk bucket ada di dalam GDriveS3
     const bucketFolderId = await DriveClient.ensureSubfolder(
       accessToken,
       bucketName,

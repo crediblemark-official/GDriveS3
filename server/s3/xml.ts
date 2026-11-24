@@ -11,8 +11,8 @@ export function xmlListBuckets(buckets: { name: string; createdAt: string }[]): 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <ListAllMyBucketsResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
   <Owner>
-    <ID>g3</ID>
-    <DisplayName>g3</DisplayName>
+    <ID>gdrives3</ID>
+    <DisplayName>gdrives3</DisplayName>
   </Owner>
   <Buckets>
 ${bucketList}

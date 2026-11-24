@@ -254,7 +254,7 @@ export function createBucketsRoutes(
       const rawSecret = new Uint8Array(32);
       crypto.getRandomValues(rawKey);
       crypto.getRandomValues(rawSecret);
-      const accessKeyId = "G3" + Buffer.from(rawKey).toString("hex").toUpperCase();
+      const accessKeyId = "GDS3" + Buffer.from(rawKey).toString("hex").toUpperCase();
       secretKey = Buffer.from(rawSecret).toString("base64url");
       const secretHash = await cipher.encrypt(secretKey);
       keyRow = {

@@ -132,7 +132,7 @@ export function createSettingsRoutes(
       const res = await dispatchWebhook(
         targetUrl,
         "test",
-        "Uji koneksi webhook dari G3 Storage berhasil!",
+        "Uji koneksi webhook dari GDriveS3 berhasil!",
         { source: "panel-settings" }
       );
       if (!res.ok) {

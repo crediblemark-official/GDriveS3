@@ -105,14 +105,14 @@ describe("S3 Router & Engine Integration", () => {
   let s3Router: ReturnType<typeof createS3Router>;
   let apiRouter: ReturnType<typeof createApiRouter>;
   let sessionCookie: string;
-  const accessKeyId = "G3INTEGRATIONKEY0001";
+  const accessKeyId = "GDS3INTEGRATIONKEY0001";
   const secretKey = "integration-secret-key-xyz-123";
   const driveFiles = new Map<string, Uint8Array>();
   let fileSeq = 1;
   const originalFetch = globalThis.fetch;
 
   beforeAll(async () => {
-    tempDir = mkdtempSync(join(tmpdir(), "g3-s3-router-test-"));
+    tempDir = mkdtempSync(join(tmpdir(), "gdrives3-s3-router-test-"));
     const { db } = initDatabase(tempDir, "admin@test.local", "secret123");
     const encKey = Buffer.from(new Uint8Array(32).fill(5)).toString("base64");
     const cipher = await TokenCipher.init(encKey, tempDir);
@@ -158,8 +158,8 @@ describe("S3 Router & Engine Integration", () => {
         body: JSON.stringify({ email: "admin@test.local", password: "secret123" }),
       })
     );
-    const match = (loginRes.headers.get("set-cookie") || "").match(/g3_session=([^;]+)/);
-    sessionCookie = `g3_session=${match![1]}`;
+    const match = (loginRes.headers.get("set-cookie") || "").match(/gdrives3_session=([^;]+)/);
+    sessionCookie = `gdrives3_session=${match![1]}`;
 
     // Mock Google OAuth & Google Drive v3 APIs
     globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {

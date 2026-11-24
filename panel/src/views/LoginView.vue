@@ -11,7 +11,7 @@
           </svg>
         </div>
         <div>
-          <h1 class="font-bold text-base tracking-tight text-primary leading-tight">G3 Storage</h1>
+          <h1 class="font-bold text-base tracking-tight text-primary leading-tight">GDriveS3</h1>
           <p class="text-xs text-muted font-mono leading-tight mt-0.5">S3-over-Drive Panel</p>
         </div>
       </div>
@@ -27,7 +27,7 @@
             v-model="email"
             type="email"
             required
-            placeholder="admin@g3.local"
+            placeholder="admin@gdrives3.local"
             class="w-full px-3.5 py-2 text-sm bg-canvas border border-subtle rounded-lg text-primary focus:outline-none focus:border-border-strong focus:ring-2 focus:ring-indigo-500/15 transition-all"
           />
         </div>
@@ -53,7 +53,7 @@
       </form>
 
       <div class="pt-2 border-t border-subtle text-center text-[11px] text-muted font-mono">
-        Default: admin@g3.local / change-me-now
+        Default: admin@gdrives3.local / change-me-now
       </div>
     </div>
   </div>
@@ -67,7 +67,7 @@ import { useToast } from "../composables/useToast";
 const router = useRouter();
 const toast = useToast();
 
-const email = ref("admin@g3.local");
+const email = ref("admin@gdrives3.local");
 const password = ref("change-me-now");
 const loading = ref(false);
 const errorMessage = ref("");

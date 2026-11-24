@@ -1,4 +1,4 @@
-const FOLDER_NAME = "G3 Storage";
+const FOLDER_NAME = "GDriveS3";
 const SUBFOLDER_CACHE_TTL_MS = 5 * 60 * 1000;
 
 function escapeDriveQuery(value: string): string {
@@ -29,7 +29,7 @@ export class DriveClient {
     const limit = Number(about.storageQuota?.limit || 0);
     const usage = Number(about.storageQuota?.usage || 0);
 
-    // 2. Ensure folder "G3 Storage" exists
+    // 2. Ensure folder "GDriveS3" exists
     const folderId = await this.ensureFolder(accessToken);
 
     return { email, limit, usage, folderId };
@@ -100,7 +100,7 @@ export class DriveClient {
       }
     }
 
-    // Buat subfolder untuk bucket di dalam folder induk G3 Storage
+    // Buat subfolder untuk bucket di dalam folder induk GDriveS3
     const createRes = await fetch("https://www.googleapis.com/drive/v3/files?fields=id", {
       method: "POST",
       headers: {

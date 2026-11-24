@@ -12,13 +12,13 @@ COPY . .
 RUN bun run build:panel
 
 # Persistent SQLite & encryption key directory
-ENV G3_DATA_DIR=/var/lib/g3-data
-ENV G3_HOST=0.0.0.0
-ENV G3_PORT=8787
-ENV G3_S3_PORT=9000
+ENV GDRIVES3_DATA_DIR=/var/lib/gdrives3-data
+ENV GDRIVES3_HOST=0.0.0.0
+ENV GDRIVES3_PORT=8787
+ENV GDRIVES3_S3_PORT=9000
 ENV NODE_ENV=production
 
-RUN mkdir -p /var/lib/g3-data
+RUN mkdir -p /var/lib/gdrives3-data
 
 EXPOSE 8787 9000
 

@@ -113,7 +113,7 @@ export async function dispatchWebhook(
   message: string,
   details?: Record<string, any>
 ): Promise<{ ok: boolean; status: number }> {
-  const text = `[G3 Storage] ${message}`;
+  const text = `[GDriveS3] ${message}`;
   const res = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },

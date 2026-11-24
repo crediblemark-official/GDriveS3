@@ -10,7 +10,7 @@ describe("Terminal Logger Telemetry", () => {
         s3Port: 9000,
         panelPort: 8787,
         host: "0.0.0.0",
-        dataDir: "./g3-data",
+        dataDir: "./gdrives3-data",
         oauthConfigured: true,
         accountsCount: 1,
         primaryEmail: "info.rasyiqi@gmail.com",

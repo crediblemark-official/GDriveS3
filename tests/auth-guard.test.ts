@@ -14,7 +14,7 @@ describe("API Session Auth Guard", () => {
   let api: ReturnType<typeof createApiRouter>;
 
   beforeAll(async () => {
-    tempDir = mkdtempSync(join(tmpdir(), "g3-auth-test-"));
+    tempDir = mkdtempSync(join(tmpdir(), "gdrives3-auth-test-"));
     const { db } = initDatabase(tempDir, "admin@test.local", "secret123");
     const key = Buffer.from(new Uint8Array(32).fill(7)).toString("base64");
     const cipher = await TokenCipher.init(key, tempDir);
@@ -36,7 +36,7 @@ describe("API Session Auth Guard", () => {
     expect(logsRes.status).toBe(401);
   });
 
-  it("should allow login and grant access to protected routes with g3_session cookie", async () => {
+  it("should allow login and grant access to protected routes with gdrives3_session cookie", async () => {
     const loginRes = await api.handle(
       new Request("http://localhost/api/auth/login", {
         method: "POST",
@@ -47,9 +47,9 @@ describe("API Session Auth Guard", () => {
     expect(loginRes.status).toBe(200);
 
     const setCookie = loginRes.headers.get("set-cookie") || "";
-    const match = setCookie.match(/g3_session=([^;]+)/);
+    const match = setCookie.match(/gdrives3_session=([^;]+)/);
     expect(match).not.toBeNull();
-    const sessionCookie = `g3_session=${match![1]}`;
+    const sessionCookie = `gdrives3_session=${match![1]}`;
 
     const keysRes = await api.handle(
       new Request("http://localhost/api/keys", {

@@ -5,12 +5,15 @@ node_modules/
 # Build artifacts
 dist/
 out/
+gdrives3-app
+gdrives3-app.exe
 g3-app
 g3-app.exe
 docs/.vitepress/dist
 docs/.vitepress/cache
 
 # Database & Runtime data
+gdrives3-data/
 g3-data/
 *.db
 *.db-journal

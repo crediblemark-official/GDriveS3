@@ -145,7 +145,7 @@ async function main() {
   // Graceful shutdown
   const shutdown = () => {
     console.log("");
-    logger.info("system", "Mematikan server G3...");
+    logger.info("system", "Mematikan server GDriveS3...");
     clearInterval(sweeper);
     s3App.stop();
     panelApp.stop();
@@ -157,6 +157,6 @@ async function main() {
 }
 
 main().catch((err) => {
-  logger.error("fatal", "Gagal memulai server G3", err);
+  logger.error("fatal", "Gagal memulai server GDriveS3", err);
   process.exit(1);
 });

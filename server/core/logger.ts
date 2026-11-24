@@ -1,5 +1,5 @@
 /**
- * High-Precision Minimalist Terminal Logger for G3 Storage
+ * High-Precision Minimalist Terminal Logger for GDriveS3
  * Formats startup banners, request telemetry, and system events.
  */
 
@@ -175,7 +175,7 @@ export const logger = {
 
     const oauthStatus = info.oauthConfigured
       ? `${ansi.brightGreen}● Aktif${ansi.reset}${info.primaryEmail ? ` ${ansi.dim}(${info.primaryEmail})${ansi.reset}` : ""}`
-      : `${ansi.yellow}○ Belum diatur${ansi.reset} ${ansi.dim}(atur G3_GOOGLE_* di .env)${ansi.reset}`;
+      : `${ansi.yellow}○ Belum diatur${ansi.reset} ${ansi.dim}(atur GDRIVES3_GOOGLE_* di .env)${ansi.reset}`;
 
     const poolStatus = info.accountsCount && info.accountsCount > 0
       ? `${ansi.brightGreen}${info.accountsCount} Akun Google${ansi.reset} ${ansi.dim}(${info.balancingStrategy || "Round Robin"})${ansi.reset}`
@@ -184,7 +184,7 @@ export const logger = {
     const WIDTH = 52;
     const boxRow = (content: string) => `  ${ansi.gray}│${ansi.reset}  ${padEndVisible(content, WIDTH)}  ${ansi.gray}│${ansi.reset}`;
 
-    const titleLeft = `${ansi.bold}${ansi.brightCyan}G3 Storage${ansi.reset} ${ansi.dim}${appVer}${ansi.reset}`;
+    const titleLeft = `${ansi.bold}${ansi.brightCyan}GDriveS3${ansi.reset} ${ansi.dim}${appVer}${ansi.reset}`;
     const titleRight = `${ansi.dim}${bunVer}${ansi.reset}`;
     const gap = Math.max(1, WIDTH - stripAnsi(titleLeft).length - stripAnsi(titleRight).length);
 
@@ -199,7 +199,7 @@ export const logger = {
     console.log(boxRow(""));
     console.log(boxRow(`${ansi.dim}•  OAuth:${ansi.reset}        ${oauthStatus}`));
     console.log(boxRow(`${ansi.dim}•  Storage Pool:${ansi.reset} ${poolStatus}`));
-    console.log(boxRow(`${ansi.dim}•  Database:${ansi.reset}     ${ansi.dim}SQLite (${info.dataDir}/g3.db)${ansi.reset}`));
+    console.log(boxRow(`${ansi.dim}•  Database:${ansi.reset}     ${ansi.dim}SQLite (${info.dataDir}/gdrives3.db)${ansi.reset}`));
     console.log(boxRow(`${ansi.dim}•  Sweeper:${ansi.reset}      ${ansi.dim}Multipart cleanup aktif (tiap 1 jam)${ansi.reset}`));
     console.log(boxRow(""));
     console.log(`  ${ansi.gray}└${"─".repeat(WIDTH + 4)}┘${ansi.reset}`);

@@ -26,11 +26,11 @@ export function createApiRouter(
   opts?: { s3PublicUrl?: string; s3Port?: number }
 ) {
   return new Elysia({ prefix: "/api" })
-    .onBeforeHandle(({ request, cookie: { g3_session }, set }) => {
+    .onBeforeHandle(({ request, cookie: { gdrives3_session }, set }) => {
       const pathname = new URL(request.url).pathname;
       if (PUBLIC_API_PATHS.has(pathname)) return;
 
-      const token = typeof g3_session?.value === "string" ? g3_session.value : "";
+      const token = typeof gdrives3_session?.value === "string" ? gdrives3_session.value : "";
       if (!token) {
         set.status = 401;
         return { error: "Unauthorized" };

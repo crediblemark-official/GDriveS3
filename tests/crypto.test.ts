@@ -5,12 +5,12 @@ describe("TokenCipher (AES-256-GCM)", () => {
   const validKey = Buffer.from(new Uint8Array(32).fill(42)).toString("base64");
 
   it("should initialize cipher from 32-byte base64 key", async () => {
-    const cipher = await TokenCipher.init(validKey, "./g3-data");
+    const cipher = await TokenCipher.init(validKey, "./gdrives3-data");
     expect(cipher).toBeDefined();
   });
 
   it("should encrypt and decrypt a string roundtrip", async () => {
-    const cipher = await TokenCipher.init(validKey, "./g3-data");
+    const cipher = await TokenCipher.init(validKey, "./gdrives3-data");
     const plaintext = "1//04_secret_google_drive_refresh_token_here_123456";
 
     const ciphertext = await cipher.encrypt(plaintext);
@@ -22,7 +22,7 @@ describe("TokenCipher (AES-256-GCM)", () => {
   });
 
   it("should fail decryption if ciphertext is tampered with", async () => {
-    const cipher = await TokenCipher.init(validKey, "./g3-data");
+    const cipher = await TokenCipher.init(validKey, "./gdrives3-data");
     const original = "important-secret-data";
     const encrypted = await cipher.encrypt(original);
 

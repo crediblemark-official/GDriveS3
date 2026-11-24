@@ -1,7 +1,7 @@
 import { Buffer } from "node:buffer";
 
 const S3_ENDPOINT = "http://localhost:9000";
-const ACCESS_KEY_ID = "G36EDCFF5437E5EFF0655CAC822AB20851";
+const ACCESS_KEY_ID = "GDS36EDCFF5437E5EFF0655CAC822AB20851";
 const SECRET_ACCESS_KEY = "wLXrKTkGgHTz08VfyDlH_Bt4Z4QcC8zIquH-JEUHA9w";
 const REGION = "us-east-1";
 const SERVICE = "s3";
@@ -90,7 +90,7 @@ async function s3Fetch(
 
 async function runTests() {
   console.log("====================================================");
-  console.log("       G3 S3 Compatibility & Drive E2E Test         ");
+  console.log("    GDriveS3 S3 Compatibility & Drive E2E Test      ");
   console.log("====================================================");
   console.log("Access Key ID:", ACCESS_KEY_ID);
   console.log("Endpoint     :", S3_ENDPOINT);
@@ -104,7 +104,7 @@ async function runTests() {
 
   // 2. PutObject (Upload file ke bucket 'testos')
   console.log("\n[Test 2] PutObject (PUT /testos/halo-dunia.txt)");
-  const fileContent = "Halo dari G3 S3 Google Drive! Waktu tes: " + new Date().toISOString();
+  const fileContent = "Halo dari GDriveS3 Google Drive! Waktu tes: " + new Date().toISOString();
   const putRes = await s3Fetch("PUT", "/testos/halo-dunia.txt", fileContent, "text/plain");
   console.log("Status:", putRes.status);
   console.log("ETag Header:", putRes.headers.get("etag"));

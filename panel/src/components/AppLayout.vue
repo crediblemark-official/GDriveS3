@@ -13,7 +13,7 @@
             </svg>
           </div>
           <div>
-            <div class="font-bold text-sm tracking-tight leading-none text-primary">G3 Storage</div>
+            <div class="font-bold text-sm tracking-tight leading-none text-primary">GDriveS3</div>
             <div class="text-[10px] text-muted font-mono leading-none mt-1">S3-over-Drive</div>
           </div>
         </div>
@@ -192,7 +192,7 @@ const { isDark, toggle, initTheme } = useTheme();
 const showMobileMenu = ref(false);
 const showChangePassword = ref(false);
 const headerMounted = ref(false);
-const currentUserEmail = ref("admin@g3.local");
+const currentUserEmail = ref("admin@gdrives3.local");
 const mustChangePassword = ref(false);
 const dismissedPasswordBanner = ref(false);
 
@@ -231,7 +231,7 @@ const currentTitle = computed(() => {
   if (p === "/keys") return "S3 Access Keys";
   if (p === "/logs") return "Log Aktivitas";
   if (p === "/settings") return "Pengaturan";
-  return "G3 Storage";
+  return "GDriveS3";
 });
 
 async function logout() {

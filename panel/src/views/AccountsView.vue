@@ -119,7 +119,7 @@
         </div>
 
         <p class="text-xs text-secondary leading-relaxed">
-          G3 memerlukan <strong>Google OAuth 2.0 Client Credentials</strong> agar dapat mengakses Google Drive API atas izin akun Anda.
+          GDriveS3 memerlukan <strong>Google OAuth 2.0 Client Credentials</strong> agar dapat mengakses Google Drive API atas izin akun Anda.
         </p>
 
         <div class="space-y-2 bg-canvas p-3.5 rounded-xl border border-subtle text-xs font-mono">
@@ -132,9 +132,9 @@
             <li>Salin kredensial ke file <strong>.env</strong> di root folder:</li>
           </ol>
           <div class="p-2.5 bg-neutral-950 text-neutral-100 rounded-lg text-[11px] select-all">
-            G3_GOOGLE_CLIENT_ID="xxx.apps.googleusercontent.com"<br/>
-            G3_GOOGLE_CLIENT_SECRET="GOCSPX-xxx"<br/>
-            G3_GOOGLE_REDIRECT_URI="http://localhost:8787/api/accounts/callback"
+            GDRIVES3_GOOGLE_CLIENT_ID="xxx.apps.googleusercontent.com"<br/>
+            GDRIVES3_GOOGLE_CLIENT_SECRET="GOCSPX-xxx"<br/>
+            GDRIVES3_GOOGLE_REDIRECT_URI="http://localhost:8787/api/accounts/callback"
           </div>
         </div>
 
@@ -211,7 +211,7 @@ async function connectAccount() {
 }
 
 async function deleteAccount(id: string, email: string) {
-  if (!confirm(`Putuskan akun '${email}' dari pool G3?`)) return;
+  if (!confirm(`Putuskan akun '${email}' dari pool GDriveS3?`)) return;
   const res = await fetch(`/api/accounts/${id}`, { method: "DELETE" });
   if (res.ok) {
     toast.success("Akun berhasil diputuskan");

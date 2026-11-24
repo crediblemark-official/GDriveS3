@@ -6,7 +6,7 @@
           <AppIcon name="code" class="w-4 h-4 text-secondary" />
           <span>Koneksi Klien AWS S3</span>
         </h2>
-        <p class="text-xs text-muted mt-0.5">Contoh siap pakai untuk menghubungkan aplikasi Anda ke G3 Storage</p>
+        <p class="text-xs text-muted mt-0.5">Contoh siap pakai untuk menghubungkan aplikasi Anda ke GDriveS3</p>
       </div>
 
       <!-- Language / Tool Tabs -->
@@ -69,9 +69,9 @@ const activeCode = computed(() => {
   const ep = props.endpoint || "http://localhost:9000";
   switch (activeTab.value) {
     case "aws-cli":
-      return `# Konfigurasi AWS CLI menggunakan endpoint G3
-export AWS_ACCESS_KEY_ID="G3_YOUR_ACCESS_KEY_ID"
-export AWS_SECRET_ACCESS_KEY="G3_YOUR_SECRET_KEY"
+      return `# Konfigurasi AWS CLI menggunakan endpoint GDriveS3
+export AWS_ACCESS_KEY_ID="GDS3_YOUR_ACCESS_KEY_ID"
+export AWS_SECRET_ACCESS_KEY="GDS3_YOUR_SECRET_KEY"
 
 # List semua bucket
 aws s3 ls --endpoint-url ${ep}
@@ -86,8 +86,8 @@ const s3 = new S3Client({
   endpoint: "${ep}",
   region: "us-east-1",
   credentials: {
-    accessKeyId: "G3_YOUR_ACCESS_KEY_ID",
-    secretAccessKey: "G3_YOUR_SECRET_KEY",
+    accessKeyId: "GDS3_YOUR_ACCESS_KEY_ID",
+    secretAccessKey: "GDS3_YOUR_SECRET_KEY",
   },
   forcePathStyle: true, // Wajib true untuk path-style endpoint
 });
@@ -106,8 +106,8 @@ await s3.send(new PutObjectCommand({
 s3 = boto3.client(
     's3',
     endpoint_url='${ep}',
-    aws_access_key_id='G3_YOUR_ACCESS_KEY_ID',
-    aws_secret_access_key='G3_YOUR_SECRET_KEY',
+    aws_access_key_id='GDS3_YOUR_ACCESS_KEY_ID',
+    aws_secret_access_key='GDS3_YOUR_SECRET_KEY',
     region_name='us-east-1'
 )
 
@@ -117,12 +117,12 @@ for b in response['Buckets']:
     print(b['Name'])`;
 
     case "rclone":
-      return `[g3]
+      return `[gdrives3]
 type = s3
 provider = Other
 env_auth = false
-access_key_id = G3_YOUR_ACCESS_KEY_ID
-secret_access_key = G3_YOUR_SECRET_KEY
+access_key_id = GDS3_YOUR_ACCESS_KEY_ID
+secret_access_key = GDS3_YOUR_SECRET_KEY
 endpoint = ${ep}
 force_path_style = true`;
 

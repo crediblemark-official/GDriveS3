@@ -1,6 +1,6 @@
-# G3 Architecture & Technical Reference
+# GDriveS3 Architecture & Technical Reference
 
-G3 adalah server penyimpanan berbasis **AWS S3-compatible API** yang menggunakan multi-akun **Google Drive** sebagai storage pool backend tak terbatas (*infinite storage pool*). Dibangun menggunakan runtime **Bun**, framework **ElysiaJS**, ORM **Drizzle SQLite**, dan antarmuka manajemen web **Vue 3 + Tailwind CSS v4**.
+GDriveS3 adalah server penyimpanan berbasis **AWS S3-compatible API** yang menggunakan multi-akun **Google Drive** sebagai storage pool backend tak terbatas (*infinite storage pool*). Dibangun menggunakan runtime **Bun**, framework **ElysiaJS**, ORM **Drizzle SQLite**, dan antarmuka manajemen web **Vue 3 + Tailwind CSS v4**.
 
 ---
 
@@ -35,13 +35,13 @@ Sistem menjalankan dua listener port independen dalam satu proses Bun tunggal:
           └───────────────────────────┘       └───────────────────────────┘
 ```
 
-1. **Port 9000 (`G3_S3_PORT`)**: Listener murni AWS S3 API kompatibel Signature V4.
+1. **Port 9000 (`GDRIVES3_S3_PORT`)**: Listener murni AWS S3 API kompatibel Signature V4.
    - Mendukung `ListBuckets`, `CreateBucket`, `DeleteBucket`, `HeadBucket`
    - Mendukung `PutObject`, `GetObject` (dengan range streaming), `HeadObject`, `DeleteObject`, `CopyObject`
    - Mendukung **S3 Multipart Upload** (`?uploads`, `?uploadId&partNumber`, `?uploadId`)
    - Mendukung **Multi-Object Delete** (`POST /:bucket?delete`)
    - Mendukung **Presigned Query URL** (`?X-Amz-Algorithm=AWS4-HMAC-SHA256&...`)
-2. **Port 8787 (`G3_PORT`)**: Web Admin Panel SPA & REST API.
+2. **Port 8787 (`GDRIVES3_PORT`)**: Web Admin Panel SPA & REST API.
    - Manajemen Google Drive Pool (OAuth 2.0 Web flow & token refresh)
    - S3 File Manager dengan folder virtual & breadcrumbs
    - Pembuat S3 Access Keys (SigV4 credentials)
@@ -51,11 +51,11 @@ Sistem menjalankan dua listener port independen dalam satu proses Bun tunggal:
 
 ## 2. Struktur Google Drive Folder Mapping
 
-Setiap bucket yang dibuat di G3 dipetakan langsung menjadi subfolder rapi di dalam folder utama `G3 Storage` pada Google Drive:
+Setiap bucket yang dibuat di GDriveS3 dipetakan langsung menjadi subfolder rapi di dalam folder utama `GDriveS3` pada Google Drive:
 
 ```
 Google Drive (info.rasyiqi@gmail.com)
-└── G3 Storage/
+└── GDriveS3/
     ├── testos/
     │   ├── halo-dunia.txt
     │   └── dokumen-2026/
@@ -93,8 +93,8 @@ Pengguna dapat menautkan lebih dari satu akun Google Drive. Saat file baru diung
 
 ### AWS CLI
 ```bash
-export AWS_ACCESS_KEY_ID="G3_YOUR_ACCESS_KEY_ID"
-export AWS_SECRET_ACCESS_KEY="G3_YOUR_SECRET_KEY"
+export AWS_ACCESS_KEY_ID="GDS3_YOUR_ACCESS_KEY_ID"
+export AWS_SECRET_ACCESS_KEY="GDS3_YOUR_SECRET_KEY"
 
 # List semua bucket
 aws s3 ls --endpoint-url http://localhost:9000
@@ -114,8 +114,8 @@ const s3 = new S3Client({
   endpoint: "http://localhost:9000",
   region: "us-east-1",
   credentials: {
-    accessKeyId: "G3_YOUR_ACCESS_KEY_ID",
-    secretAccessKey: "G3_YOUR_SECRET_KEY",
+    accessKeyId: "GDS3_YOUR_ACCESS_KEY_ID",
+    secretAccessKey: "GDS3_YOUR_SECRET_KEY",
   },
   forcePathStyle: true,
 });
@@ -136,8 +136,8 @@ import boto3
 s3 = boto3.client(
     's3',
     endpoint_url='http://localhost:9000',
-    aws_access_key_id='G3_YOUR_ACCESS_KEY_ID',
-    aws_secret_access_key='G3_YOUR_SECRET_KEY',
+    aws_access_key_id='GDS3_YOUR_ACCESS_KEY_ID',
+    aws_secret_access_key='GDS3_YOUR_SECRET_KEY',
     region_name='us-east-1'
 )
 

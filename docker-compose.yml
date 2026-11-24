@@ -1,7 +1,7 @@
 services:
-  g3:
+  gdrives3:
     build: .
-    container_name: g3-storage
+    container_name: gdrives3
     restart: unless-stopped
     ports:
       - "8787:8787" # Admin Web Panel & REST API
@@ -9,11 +9,11 @@ services:
     env_file:
       - .env
     environment:
-      - G3_DATA_DIR=/var/lib/g3-data
+      - GDRIVES3_DATA_DIR=/var/lib/gdrives3-data
       - NODE_ENV=production
     volumes:
-      - g3_data:/var/lib/g3-data
+      - gdrives3_data:/var/lib/gdrives3-data
 
 volumes:
-  g3_data:
+  gdrives3_data:
     driver: local

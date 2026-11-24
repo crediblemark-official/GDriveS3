@@ -2,7 +2,7 @@ import { describe, it, expect } from "bun:test";
 import { parseSigV4, verifySigV4, generatePresignedUrl } from "../server/s3/sigv4";
 
 describe("AWS Signature V4", () => {
-  const accessKeyId = "G3TESTKEY1234567890";
+  const accessKeyId = "GDS3TESTKEY1234567890";
   const secretKey = "testsecretkeyabcdef1234567890abcdef";
 
   it("should parse Authorization header", () => {

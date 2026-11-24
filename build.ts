@@ -1,7 +1,7 @@
 import { $ } from "bun";
 
 console.log("-----------------------------------------");
-console.log("       G3 Build & Packaging Pipeline      ");
+console.log("    GDriveS3 Build & Packaging Pipeline  ");
 console.log("-----------------------------------------");
 
 // 1. Build Panel Vue 3 SPA
