@@ -3,6 +3,7 @@ import { defineConfig } from "vitepress";
 export default defineConfig({
   title: "GDriveS3",
   description: "S3-Compatible Object Storage over Google Drive",
+  base: "/GDriveS3/",
   cleanUrls: true,
   themeConfig: {
     nav: [

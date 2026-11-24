@@ -3,7 +3,7 @@ layout: home
 
 hero:
   name: "GDriveS3"
-  text: "S3 Object Storage over Google Drive"
+  text: "Object Storage over Google Drive"
   tagline: Gabungkan banyak akun Google Drive menjadi satu endpoint AWS S3 API yang ringan, terenkripsi, dan siap produksi di Bun.
   actions:
     - theme: brand
