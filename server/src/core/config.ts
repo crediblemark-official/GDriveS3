@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import { existsSync, mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
 
 export interface AppConfig {
   port: number;
@@ -16,22 +16,42 @@ export interface AppConfig {
 }
 
 export function loadConfig(): AppConfig {
-  const dataDir = process.env.G3_DATA_DIR || "./g3-data";
+  const fileEnv: Record<string, string> = {};
+  if (existsSync(".env")) {
+    const lines = readFileSync(".env", "utf-8").split("\n");
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith("#")) continue;
+      const idx = trimmed.indexOf("=");
+      if (idx > 0) {
+        const key = trimmed.slice(0, idx).trim();
+        let val = trimmed.slice(idx + 1).trim();
+        if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+          val = val.slice(1, -1);
+        }
+        fileEnv[key] = val;
+      }
+    }
+  }
+
+  const getEnv = (k: string, fallback: string = "") => process.env[k] || fileEnv[k] || fallback;
+
+  const dataDir = getEnv("G3_DATA_DIR", "./g3-data");
   if (!existsSync(dataDir)) {
     mkdirSync(dataDir, { recursive: true });
   }
 
   return {
-    port: Number(process.env.G3_PORT || process.env.PORT || 8787),
-    s3Port: Number(process.env.G3_S3_PORT || 9000),
-    host: process.env.G3_HOST || "0.0.0.0",
+    port: Number(getEnv("G3_PORT", getEnv("PORT", "8787"))),
+    s3Port: Number(getEnv("G3_S3_PORT", "9000")),
+    host: getEnv("G3_HOST", "0.0.0.0"),
     dataDir,
-    adminEmail: process.env.G3_ADMIN_EMAIL || "admin@g3.local",
-    adminPassword: process.env.G3_ADMIN_PASSWORD || "change-me-now",
-    encryptionKey: process.env.G3_ENCRYPTION_KEY || "",
-    googleClientId: process.env.G3_GOOGLE_CLIENT_ID || "",
-    googleClientSecret: process.env.G3_GOOGLE_CLIENT_SECRET || "",
-    googleRedirectUri: process.env.G3_GOOGLE_REDIRECT_URI || "http://localhost:8787/api/accounts/callback",
-    isDev: process.env.NODE_ENV !== "production" && process.env.G3_DEV !== "false",
+    adminEmail: getEnv("G3_ADMIN_EMAIL", "admin@g3.local"),
+    adminPassword: getEnv("G3_ADMIN_PASSWORD", "change-me-now"),
+    encryptionKey: getEnv("G3_ENCRYPTION_KEY", ""),
+    googleClientId: getEnv("G3_GOOGLE_CLIENT_ID", ""),
+    googleClientSecret: getEnv("G3_GOOGLE_CLIENT_SECRET", ""),
+    googleRedirectUri: getEnv("G3_GOOGLE_REDIRECT_URI", "http://localhost:8787/api/accounts/callback"),
+    isDev: process.env.NODE_ENV !== "production" && getEnv("G3_DEV", "true") !== "false",
   };
 }
