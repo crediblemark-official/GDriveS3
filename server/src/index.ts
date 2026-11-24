@@ -55,10 +55,15 @@ async function main() {
   // Serve static dist panel jika ada
   const panelDist = join(import.meta.dir, "../../panel/dist");
   if (existsSync(panelDist)) {
-    panelApp.use(staticPlugin({ assets: panelDist, prefix: "/" }));
-    // SPA Fallback untuk Vue Router
-    panelApp.get("*", ({ set }) => {
-      set.headers["Content-Type"] = "text/html";
+    panelApp.get("*", async ({ params }) => {
+      const subpath = params["*"];
+      if (subpath) {
+        const targetPath = join(panelDist, subpath);
+        const file = Bun.file(targetPath);
+        if (await file.exists()) {
+          return file;
+        }
+      }
       return Bun.file(join(panelDist, "index.html"));
     });
   }
