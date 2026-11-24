@@ -51,4 +51,17 @@ const router = createRouter({
   ],
 });
 
+router.beforeEach(async (to) => {
+  if (to.path === "/login") return true;
+  try {
+    const res = await fetch("/api/me");
+    if (res.status === 401) {
+      return "/login";
+    }
+  } catch {
+    // Allow navigation when offline/dev error is handled by view
+  }
+  return true;
+});
+
 export default router;

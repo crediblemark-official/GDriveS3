@@ -1,5 +1,7 @@
 import { Elysia } from "elysia";
+import { eq } from "drizzle-orm";
 import type { AppDatabase } from "../db/client";
+import { sessions } from "../db/schema";
 import type { TokenCipher } from "../core/crypto";
 import type { GoogleOAuth } from "../drive/oauth";
 import type { S3Engine } from "../s3/engine";
@@ -10,6 +12,12 @@ import { createKeysRoutes } from "./keys";
 import { createSettingsRoutes } from "./settings";
 import { createLogsRoutes } from "./logs";
 
+const PUBLIC_API_PATHS = new Set([
+  "/api/auth/login",
+  "/api/auth/logout",
+  "/api/accounts/callback",
+]);
+
 export function createApiRouter(
   db: AppDatabase,
   oauth: GoogleOAuth,
@@ -17,6 +25,22 @@ export function createApiRouter(
   engine: S3Engine
 ) {
   return new Elysia({ prefix: "/api" })
+    .onBeforeHandle(({ request, cookie: { g3_session }, set }) => {
+      const pathname = new URL(request.url).pathname;
+      if (PUBLIC_API_PATHS.has(pathname)) return;
+
+      const token = typeof g3_session?.value === "string" ? g3_session.value : "";
+      if (!token) {
+        set.status = 401;
+        return { error: "Unauthorized" };
+      }
+
+      const sess = db.select().from(sessions).where(eq(sessions.token, token)).get();
+      if (!sess || new Date(sess.expiresAt) < new Date()) {
+        set.status = 401;
+        return { error: "Session expired" };
+      }
+    })
     .use(createAuthRoutes(db))
     .use(createAccountsRoutes(db, oauth, cipher))
     .use(createBucketsRoutes(db, cipher, engine))

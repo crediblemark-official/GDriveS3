@@ -1,0 +1,19 @@
+services:
+  g3:
+    build: .
+    container_name: g3-storage
+    restart: unless-stopped
+    ports:
+      - "8787:8787" # Admin Web Panel & REST API
+      - "9000:9000" # AWS S3-compatible API
+    env_file:
+      - .env
+    environment:
+      - G3_DATA_DIR=/var/lib/g3-data
+      - NODE_ENV=production
+    volumes:
+      - g3_data:/var/lib/g3-data
+
+volumes:
+  g3_data:
+    driver: local
