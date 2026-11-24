@@ -4,6 +4,7 @@ import { existsSync, mkdirSync, readFileSync } from "node:fs";
 export interface AppConfig {
   port: number;
   s3Port: number;
+  s3PublicUrl: string;
   host: string;
   dataDir: string;
   adminEmail: string;
@@ -44,6 +45,7 @@ export function loadConfig(): AppConfig {
   return {
     port: Number(getEnv("G3_PORT", getEnv("PORT", "8787"))),
     s3Port: Number(getEnv("G3_S3_PORT", "9000")),
+    s3PublicUrl: getEnv("G3_S3_PUBLIC_URL", "").replace(/\/+$/, ""),
     host: getEnv("G3_HOST", "0.0.0.0"),
     dataDir,
     adminEmail: getEnv("G3_ADMIN_EMAIL", "admin@g3.local"),
@@ -54,4 +56,36 @@ export function loadConfig(): AppConfig {
     googleRedirectUri: getEnv("G3_GOOGLE_REDIRECT_URI", "http://localhost:8787/api/accounts/callback"),
     isDev: process.env.NODE_ENV !== "production" && getEnv("G3_DEV", "true") !== "false",
   };
+}
+
+/**
+ * Resolves the public S3 endpoint URL for presigned links and UI snippets.
+ * Prefers G3_S3_PUBLIC_URL; otherwise derives hostname from the incoming Host header.
+ */
+export function resolveS3Endpoint(
+  request: Request,
+  s3PublicUrl?: string,
+  s3Port?: number
+): string {
+  const configured = (s3PublicUrl || process.env.G3_S3_PUBLIC_URL || "").trim().replace(/\/+$/, "");
+  if (configured) return configured;
+
+  const port = s3Port || Number(process.env.G3_S3_PORT || 9000);
+  const proto = request.headers.get("x-forwarded-proto") || new URL(request.url).protocol.replace(":", "") || "http";
+  const rawHost = request.headers.get("x-forwarded-host") || request.headers.get("host") || "";
+
+  let hostname = "localhost";
+  if (rawHost) {
+    if (rawHost.startsWith("[")) {
+      const endIdx = rawHost.indexOf("]");
+      hostname = endIdx >= 0 ? rawHost.slice(0, endIdx + 1) : rawHost;
+    } else {
+      hostname = rawHost.split(":")[0] || "localhost";
+    }
+  } else if (process.env.G3_HOST && process.env.G3_HOST !== "0.0.0.0") {
+    hostname = process.env.G3_HOST;
+  }
+
+  if (hostname === "0.0.0.0") hostname = "localhost";
+  return `${proto}://${hostname}:${port}`;
 }

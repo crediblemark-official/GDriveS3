@@ -74,7 +74,6 @@ export function initDatabase(dataDir: string, adminEmail: string, adminPassword:
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
-    CREATE INDEX IF NOT EXISTS idx_objects_bucket_key ON objects(bucket_id, object_key);
 
     CREATE TABLE IF NOT EXISTS multipart_uploads (
       upload_id TEXT PRIMARY KEY,
@@ -109,6 +108,21 @@ export function initDatabase(dataDir: string, adminEmail: string, adminPassword:
       value TEXT NOT NULL
     );
   `);
+
+  // Deduplikasi baris objek lama sebelum menegakkan UNIQUE INDEX pada (bucket_id, object_key)
+  sqlite.run(`
+    DELETE FROM objects
+    WHERE rowid NOT IN (
+      SELECT MAX(rowid) FROM objects GROUP BY bucket_id, object_key
+    );
+  `);
+  const existingObjIdx = sqlite
+    .query("SELECT sql FROM sqlite_master WHERE type='index' AND name='idx_objects_bucket_key'")
+    .get() as { sql?: string } | null;
+  if (existingObjIdx?.sql && !existingObjIdx.sql.toUpperCase().includes("UNIQUE")) {
+    sqlite.run("DROP INDEX IF EXISTS idx_objects_bucket_key;");
+  }
+  sqlite.run("CREATE UNIQUE INDEX IF NOT EXISTS idx_objects_bucket_key ON objects(bucket_id, object_key);");
 
   // Seed Admin jika belum ada user
   const existing = db.select().from(schema.users).all();

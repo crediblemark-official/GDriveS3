@@ -19,10 +19,15 @@ describe("Webhook & S3 CORS Settings", () => {
     rmSync(tempDir, { recursive: true, force: true });
   });
 
-  it("should validate webhook URLs and reject metadata/non-http hosts", () => {
+  it("should validate webhook URLs and reject metadata/private/loopback/non-http hosts", () => {
     expect(validateWebhookUrl("https://discord.com/api/webhooks/123/abc")).toBeNull();
     expect(validateWebhookUrl("ftp://example.com/hook")).not.toBeNull();
     expect(validateWebhookUrl("http://169.254.169.254/latest/meta-data")).not.toBeNull();
+    expect(validateWebhookUrl("http://127.0.0.1:8787/hook")).not.toBeNull();
+    expect(validateWebhookUrl("http://localhost:9000/hook")).not.toBeNull();
+    expect(validateWebhookUrl("http://10.0.0.5/hook")).not.toBeNull();
+    expect(validateWebhookUrl("http://192.168.1.1/hook")).not.toBeNull();
+    expect(validateWebhookUrl("http://[::1]:8080/hook")).not.toBeNull();
   });
 
   it("should persist webhook config in SQLite system_settings", () => {

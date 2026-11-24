@@ -45,10 +45,10 @@
             title="Ubah Password Admin"
             class="flex items-center gap-2 overflow-hidden text-left flex-1 rounded-md hover:bg-surface-raised p-1 -m-1 transition-colors"
           >
-            <div class="w-6 h-6 rounded-full bg-brand/10 flex items-center justify-center text-xs font-mono font-semibold text-primary shrink-0">
-              A
+            <div class="w-6 h-6 rounded-full bg-brand/10 flex items-center justify-center text-xs font-mono font-semibold text-primary shrink-0 uppercase">
+              {{ userInitial }}
             </div>
-            <div class="truncate text-xs text-secondary font-mono">admin@g3.local</div>
+            <div class="truncate text-xs text-secondary font-mono">{{ currentUserEmail }}</div>
           </button>
           <button
             @click="logout"
@@ -102,6 +102,30 @@
 
       <!-- Viewport App Workspace (Full-Width Viewport App Shell) -->
       <main class="flex-1 w-full overflow-y-auto">
+        <div
+          v-if="mustChangePassword && !dismissedPasswordBanner"
+          class="bg-warning-bg border-b border-warning-border px-4 sm:px-6 py-2.5 flex flex-wrap items-center justify-between gap-2 text-xs"
+        >
+          <div class="flex items-center gap-2 text-warning font-medium">
+            <AppIcon name="alert-triangle" class="w-4 h-4 shrink-0" />
+            <span>Anda masih menggunakan password bawaan. Segera ubah password admin demi keamanan.</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <button
+              @click="showChangePassword = true"
+              class="px-2.5 py-1 rounded-md bg-neutral-900 text-white dark:bg-white dark:text-neutral-950 font-semibold text-[11px]"
+            >
+              Ubah Password
+            </button>
+            <button
+              @click="dismissedPasswordBanner = true"
+              class="px-1.5 py-1 text-muted hover:text-primary"
+              aria-label="Tutup peringatan"
+            >
+              &times;
+            </button>
+          </div>
+        </div>
         <RouterView v-if="headerMounted" />
       </main>
     </div>
@@ -142,7 +166,11 @@
     </BottomSheet>
 
     <!-- Change Password Modal -->
-    <ChangePasswordModal v-if="showChangePassword" @close="showChangePassword = false" />
+    <ChangePasswordModal
+      v-if="showChangePassword"
+      @changed="mustChangePassword = false"
+      @close="showChangePassword = false"
+    />
 
     <!-- Global Undo Toast System -->
     <AppToast />
@@ -164,10 +192,25 @@ const { isDark, toggle, initTheme } = useTheme();
 const showMobileMenu = ref(false);
 const showChangePassword = ref(false);
 const headerMounted = ref(false);
+const currentUserEmail = ref("admin@g3.local");
+const mustChangePassword = ref(false);
+const dismissedPasswordBanner = ref(false);
 
-onMounted(() => {
+const userInitial = computed(() => (currentUserEmail.value[0] || "A").toUpperCase());
+
+onMounted(async () => {
   initTheme();
   headerMounted.value = true;
+  try {
+    const res = await fetch("/api/me");
+    if (res.ok) {
+      const data = await res.json();
+      if (data?.user?.email) currentUserEmail.value = data.user.email;
+      mustChangePassword.value = Boolean(data?.user?.mustChangePassword);
+    }
+  } catch {
+    // Ignore transient network errors
+  }
 });
 
 const navItems = [

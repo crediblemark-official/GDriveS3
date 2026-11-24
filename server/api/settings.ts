@@ -15,15 +15,17 @@ import {
   saveS3CorsConfig,
   type S3CorsConfig,
 } from "../core/corsConfig";
+import { resolveS3Endpoint } from "../core/config";
 
 export function createSettingsRoutes(
   db: AppDatabase,
-  engine: S3Engine
+  engine: S3Engine,
+  opts?: { s3PublicUrl?: string; s3Port?: number }
 ) {
   const router = new Elysia();
 
   // Aggregate Stats
-  router.get("/stats", async () => {
+  router.get("/stats", async ({ request }) => {
     const accounts = db.select().from(driveAccounts).all();
     const allBuckets = db.select().from(buckets).all();
     const allObjects = db.select().from(objects).all();
@@ -39,6 +41,7 @@ export function createSettingsRoutes(
       totalStorageLimit,
       totalStorageUsage,
       totalObjectBytes,
+      s3Endpoint: resolveS3Endpoint(request, opts?.s3PublicUrl, opts?.s3Port),
       accounts: accounts.map((a) => ({
         id: a.id,
         email: a.email,

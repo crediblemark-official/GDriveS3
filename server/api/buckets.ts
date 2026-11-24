@@ -4,12 +4,14 @@ import type { AppDatabase } from "../db/client";
 import { buckets, objects, s3AccessKeys } from "../db/schema";
 import type { S3Engine } from "../s3/engine";
 import type { TokenCipher } from "../core/crypto";
+import { resolveS3Endpoint } from "../core/config";
 import { generatePresignedUrl } from "../s3/sigv4";
 
 export function createBucketsRoutes(
   db: AppDatabase,
   cipher: TokenCipher,
-  engine: S3Engine
+  engine: S3Engine,
+  opts?: { s3PublicUrl?: string; s3Port?: number }
 ) {
   const router = new Elysia();
 
@@ -223,21 +225,25 @@ export function createBucketsRoutes(
   });
 
   // Generate S3 Presigned URL
-  router.post("/buckets/:id/presign", async ({ params, body, set }) => {
+  router.post("/buckets/:id/presign", async ({ params, body, request, set }) => {
     const bucket = db.select().from(buckets).where(eq(buckets.id, params.id)).get();
     if (!bucket) {
       set.status = 404;
       return { error: "Bucket tidak ditemukan" };
     }
-    const { key, expiresIn = 3600, method = "GET" } = body as {
+    const { key, expiresIn, expiresInSeconds, method = "GET" } = body as {
       key?: string;
       expiresIn?: number;
+      expiresInSeconds?: number;
       method?: string;
     };
     if (!key) {
       set.status = 400;
       return { error: "Parameter 'key' wajib diisi" };
     }
+
+    const rawTtl = expiresIn ?? expiresInSeconds ?? 3600;
+    const ttl = Math.min(604800, Math.max(60, Math.floor(Number(rawTtl) || 3600)));
 
     let keyRow = db.select().from(s3AccessKeys).all()[0];
     let secretKey = "";
@@ -261,9 +267,7 @@ export function createBucketsRoutes(
       db.insert(s3AccessKeys).values(keyRow).run();
     }
 
-    const host = process.env.G3_HOST || "localhost";
-    const s3Port = process.env.G3_S3_PORT || "9000";
-    const endpoint = `http://${host}:${s3Port}`;
+    const endpoint = resolveS3Endpoint(request, opts?.s3PublicUrl, opts?.s3Port);
 
     const url = await generatePresignedUrl({
       endpoint,
@@ -271,12 +275,12 @@ export function createBucketsRoutes(
       key,
       accessKeyId: keyRow.accessKeyId,
       secretKey,
-      expiresInSeconds: Number(expiresIn),
+      expiresInSeconds: ttl,
       method,
     });
 
-    const expiresAt = new Date(Date.now() + Number(expiresIn) * 1000).toISOString();
-    return { success: true, url, expiresAt, expiresIn: Number(expiresIn) };
+    const expiresAt = new Date(Date.now() + ttl * 1000).toISOString();
+    return { success: true, url, expiresAt, expiresIn: ttl };
   });
 
   return router;

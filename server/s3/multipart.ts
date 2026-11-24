@@ -89,6 +89,17 @@ export class MultipartEngine {
 
     const etag = hasher.digest("hex");
 
+    // Ganti part lama jika partNumber diunggah ulang
+    const existingPart = this.db
+      .select()
+      .from(multipartParts)
+      .where(and(eq(multipartParts.uploadId, uploadId), eq(multipartParts.partNumber, partNumber)))
+      .get();
+    if (existingPart) {
+      this.deleteDriveFile(existingPart.accountId, existingPart.driveFileId).catch(() => {});
+      this.db.delete(multipartParts).where(eq(multipartParts.id, existingPart.id)).run();
+    }
+
     this.db
       .insert(multipartParts)
       .values({
@@ -156,7 +167,7 @@ export class MultipartEngine {
       .where(and(eq(objects.bucketId, bucket.id), eq(objects.objectKey, key)))
       .get();
     if (existing) {
-      deleteObjectFn(bucketName, key).catch(() => {});
+      await deleteObjectFn(bucketName, key);
     }
 
     this.db
@@ -195,6 +206,32 @@ export class MultipartEngine {
 
     this.db.delete(multipartParts).where(eq(multipartParts.uploadId, uploadId)).run();
     this.db.delete(multipartUploads).where(eq(multipartUploads.uploadId, uploadId)).run();
+  }
+
+  listUploads(bucketName: string) {
+    const bucket = this.db.select().from(buckets).where(eq(buckets.name, bucketName)).get();
+    if (!bucket) throw new Error("NoSuchBucket");
+    return this.db
+      .select()
+      .from(multipartUploads)
+      .where(eq(multipartUploads.bucketId, bucket.id))
+      .all();
+  }
+
+  listParts(uploadId: string) {
+    const upload = this.db
+      .select()
+      .from(multipartUploads)
+      .where(eq(multipartUploads.uploadId, uploadId))
+      .get();
+    if (!upload) throw new Error("NoSuchUpload");
+    const parts = this.db
+      .select()
+      .from(multipartParts)
+      .where(eq(multipartParts.uploadId, uploadId))
+      .all();
+    parts.sort((a, b) => a.partNumber - b.partNumber);
+    return { upload, parts };
   }
 
   async sweepStale(maxAgeMs: number = 24 * 60 * 60 * 1000): Promise<number> {

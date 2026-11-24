@@ -1,8 +1,9 @@
-import { eq, sql } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import type { AppDatabase } from "../db/client";
 import { driveAccounts, systemSettings } from "../db/schema";
 import type { TokenCipher } from "../core/crypto";
 import type { GoogleOAuth } from "./oauth";
+import { getWebhookConfig, notifyWebhookIfEnabled } from "../core/webhook";
 
 const DAILY_UPLOAD_LIMIT = 750 * 1024 * 1024 * 1024; // 750 GB/hari per akun Google
 
@@ -51,10 +52,27 @@ export class Balancer {
     const chosen = this.choose(strategy, objectKey, candidates);
 
     // Refresh token dan minta access token baru
-    const decryptedRefresh = await this.cipher.decrypt(chosen.refreshToken);
-    const accessToken = await this.oauth.refreshAccessToken(decryptedRefresh);
-
-    return { account: chosen, accessToken };
+    try {
+      const decryptedRefresh = await this.cipher.decrypt(chosen.refreshToken);
+      const accessToken = await this.oauth.refreshAccessToken(decryptedRefresh);
+      return { account: chosen, accessToken };
+    } catch (err: any) {
+      const msg = String(err?.message || "");
+      if (msg.includes("token refresh") || msg.includes("invalid_grant")) {
+        this.db
+          .update(driveAccounts)
+          .set({ status: "revoked", updatedAt: new Date().toISOString() })
+          .where(eq(driveAccounts.id, chosen.id))
+          .run();
+      }
+      void notifyWebhookIfEnabled(
+        this.db,
+        "auth_error",
+        `Gagal refresh token OAuth untuk ${chosen.email}: ${msg}`,
+        { email: chosen.email }
+      );
+      throw err;
+    }
   }
 
   private choose(
@@ -124,5 +142,18 @@ export class Balancer {
       })
       .where(eq(driveAccounts.id, accountId))
       .run();
+
+    if (acc.storageLimit && acc.storageLimit > 0) {
+      const webhookCfg = getWebhookConfig(this.db);
+      const pct = Math.round((nextUsage / acc.storageLimit) * 100);
+      if (pct >= webhookCfg.thresholdPercent) {
+        void notifyWebhookIfEnabled(
+          this.db,
+          "quota_warning",
+          `Kuota Google Drive ${acc.email} mencapai ${pct}% (batas ${webhookCfg.thresholdPercent}%)`,
+          { email: acc.email, usagePercent: pct }
+        );
+      }
+    }
   }
 }

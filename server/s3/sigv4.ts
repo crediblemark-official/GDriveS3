@@ -62,12 +62,57 @@ export function parseSigV4(req: Request): ParsedCredential | null {
   return null;
 }
 
+export function encodeRfc3986(str: string): string {
+  return encodeURIComponent(str).replace(/[!'()*]/g, (c) => "%" + c.charCodeAt(0).toString(16).toUpperCase());
+}
+
+function encodeCanonicalPath(pathname: string): string {
+  return pathname
+    .split("/")
+    .map((seg) => {
+      try {
+        return encodeRfc3986(decodeURIComponent(seg));
+      } catch {
+        return encodeRfc3986(seg);
+      }
+    })
+    .join("/");
+}
+
+function parseAmzDateMs(amzDate: string): number | null {
+  const m = amzDate.match(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z$/);
+  if (!m) return null;
+  return Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]), Number(m[4]), Number(m[5]), Number(m[6]));
+}
+
 export async function verifySigV4(
   req: Request,
   cred: ParsedCredential,
   secretKey: string
 ): Promise<boolean> {
   const url = new URL(req.url);
+
+  // 0. Validasi masa berlaku presigned URL (X-Amz-Date + X-Amz-Expires)
+  const amzDate = cred.isPresigned
+    ? url.searchParams.get("X-Amz-Date") || ""
+    : req.headers.get("x-amz-date") || "";
+
+  if (cred.isPresigned) {
+    const issuedMs = parseAmzDateMs(amzDate);
+    const expiresRaw = url.searchParams.get("X-Amz-Expires");
+    const expiresSec = expiresRaw ? Number(expiresRaw) : NaN;
+    if (
+      issuedMs === null ||
+      !Number.isFinite(expiresSec) ||
+      expiresSec < 1 ||
+      expiresSec > 604800
+    ) {
+      return false;
+    }
+    if (Date.now() > issuedMs + expiresSec * 1000) {
+      return false;
+    }
+  }
 
   // 1. Canonical Headers
   const canonicalHeaders = cred.signedHeaders
@@ -82,7 +127,7 @@ export async function verifySigV4(
   const queryParams: [string, string][] = [];
   for (const [k, v] of url.searchParams.entries()) {
     if (cred.isPresigned && k === "X-Amz-Signature") continue;
-    queryParams.push([encodeURIComponent(k), encodeURIComponent(v)]);
+    queryParams.push([encodeRfc3986(k), encodeRfc3986(v)]);
   }
   queryParams.sort(([a], [b]) => a.localeCompare(b));
   const canonicalQuery = queryParams.map(([k, v]) => `${k}=${v}`).join("&");
@@ -96,7 +141,7 @@ export async function verifySigV4(
   // 4. Canonical Request
   const canonicalRequest = [
     req.method,
-    url.pathname,
+    encodeCanonicalPath(url.pathname),
     canonicalQuery,
     canonicalHeaders,
     cred.signedHeaders.join(";"),
@@ -104,10 +149,6 @@ export async function verifySigV4(
   ].join("\n");
 
   // 5. String to Sign
-  const amzDate = cred.isPresigned
-    ? url.searchParams.get("X-Amz-Date") || ""
-    : req.headers.get("x-amz-date") || "";
-
   const canonicalHash = new Bun.CryptoHasher("sha256")
     .update(canonicalRequest)
     .digest("hex");
@@ -190,7 +231,7 @@ export async function generatePresignedUrl({
   // Canonical Query String
   const queryParams: [string, string][] = [];
   for (const [k, v] of targetUrl.searchParams.entries()) {
-    queryParams.push([encodeURIComponent(k), encodeURIComponent(v)]);
+    queryParams.push([encodeRfc3986(k), encodeRfc3986(v)]);
   }
   queryParams.sort(([a], [b]) => a.localeCompare(b));
   const canonicalQuery = queryParams.map(([k, v]) => `${k}=${v}`).join("&");
@@ -199,7 +240,7 @@ export async function generatePresignedUrl({
   const canonicalHeaders = `host:${targetUrl.host}\n`;
   const canonicalRequest = [
     method.toUpperCase(),
-    targetUrl.pathname,
+    encodeCanonicalPath(targetUrl.pathname),
     canonicalQuery,
     canonicalHeaders,
     "host",

@@ -553,9 +553,15 @@ async function uploadFiles(files: File[]) {
   let totalSavedBytes = 0;
   for (const rawFile of files) {
     try {
-      const optRes = await optimizeImageFile(rawFile, imageOpt.value);
-      totalSavedBytes += optRes.savedBytes;
-      await uploadFileObject(optRes.file);
+      let fileToUpload = rawFile;
+      try {
+        const optRes = await optimizeImageFile(rawFile, imageOpt.value);
+        fileToUpload = optRes.file;
+        totalSavedBytes += optRes.savedBytes;
+      } catch {
+        toast.info(`Optimasi gambar dilewati untuk ${rawFile.name}, mengunggah file asli`);
+      }
+      await uploadFileObject(fileToUpload);
       successCount++;
     } catch (err: any) {
       toast.error(err.message);

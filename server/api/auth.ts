@@ -7,7 +7,7 @@ export function createAuthRoutes(db: AppDatabase) {
   const router = new Elysia();
 
   // Login
-  router.post("/auth/login", async ({ body, cookie: { g3_session }, set }) => {
+  router.post("/auth/login", async ({ body, cookie: { g3_session }, request, set }) => {
     const { email, password } = body as { email?: string; password?: string };
     if (!email || !password) {
       set.status = 400;
@@ -22,6 +22,10 @@ export function createAuthRoutes(db: AppDatabase) {
 
     const token = crypto.randomUUID();
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+    const isHttps =
+      new URL(request.url).protocol === "https:" ||
+      request.headers.get("x-forwarded-proto") === "https" ||
+      process.env.G3_COOKIE_SECURE === "true";
 
     db.insert(sessions).values({
       id: crypto.randomUUID(),
@@ -34,6 +38,8 @@ export function createAuthRoutes(db: AppDatabase) {
     g3_session.set({
       value: token,
       httpOnly: true,
+      sameSite: "lax",
+      secure: isHttps,
       path: "/",
       maxAge: 7 * 24 * 60 * 60,
     });
@@ -44,6 +50,7 @@ export function createAuthRoutes(db: AppDatabase) {
         email: user.email,
         name: user.name,
         role: user.role,
+        mustChangePassword: Boolean(user.mustChangePassword),
       },
     };
   });
@@ -84,6 +91,7 @@ export function createAuthRoutes(db: AppDatabase) {
         email: user.email,
         name: user.name,
         role: user.role,
+        mustChangePassword: Boolean(user.mustChangePassword),
       },
     };
   });

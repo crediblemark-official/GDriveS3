@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, index } from "drizzle-orm/sqlite-core";
+import { sqliteTable, text, integer, index, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 export const users = sqliteTable("users", {
   id: text("id").primaryKey(),
@@ -64,7 +64,7 @@ export const objects = sqliteTable("objects", {
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
 }, (t) => [
-  index("idx_objects_bucket_key").on(t.bucketId, t.objectKey),
+  uniqueIndex("idx_objects_bucket_key").on(t.bucketId, t.objectKey),
 ]);
 
 export const multipartUploads = sqliteTable("multipart_uploads", {

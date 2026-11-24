@@ -19,6 +19,41 @@ export const DEFAULT_WEBHOOK_CONFIG: WebhookConfig = {
   notifyOnAuthError: true,
 };
 
+function isPrivateOrLoopbackHost(rawHost: string): boolean {
+  const host = rawHost.toLowerCase().replace(/^\[|\]$/g, "");
+  if (
+    host === "localhost" ||
+    host.endsWith(".localhost") ||
+    host.endsWith(".local") ||
+    host.endsWith(".internal") ||
+    host === "metadata.google.internal" ||
+    host === "::1" ||
+    host === "::" ||
+    host.startsWith("fe80:") ||
+    host.startsWith("fc") ||
+    host.startsWith("fd")
+  ) {
+    return true;
+  }
+
+  const ipv4 = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (ipv4) {
+    const [, a, b] = ipv4.map(Number);
+    if (
+      a === 0 ||
+      a === 10 ||
+      a === 127 ||
+      (a === 169 && b === 254) ||
+      (a === 172 && b >= 16 && b <= 31) ||
+      (a === 192 && b === 168) ||
+      (a === 100 && b >= 64 && b <= 127)
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
 export function validateWebhookUrl(rawUrl: string): string | null {
   let parsed: URL;
   try {
@@ -31,13 +66,8 @@ export function validateWebhookUrl(rawUrl: string): string | null {
     return "Webhook hanya mendukung protokol http:// atau https://";
   }
 
-  const host = parsed.hostname.toLowerCase();
-  if (
-    host === "169.254.169.254" ||
-    host === "metadata.google.internal" ||
-    host.endsWith(".internal")
-  ) {
-    return "Host internal/metadata tidak diizinkan";
+  if (isPrivateOrLoopbackHost(parsed.hostname)) {
+    return "Host internal/loopback/metadata tidak diizinkan";
   }
 
   return null;
@@ -98,6 +128,9 @@ export async function dispatchWebhook(
   return { ok: res.ok, status: res.status };
 }
 
+const WEBHOOK_COOLDOWN_MS = 60 * 60 * 1000;
+const recentWebhookAlerts = new Map<string, number>();
+
 export async function notifyWebhookIfEnabled(
   db: AppDatabase,
   event: "quota_warning" | "auth_error",
@@ -108,6 +141,13 @@ export async function notifyWebhookIfEnabled(
   if (!cfg.enabled || !cfg.url) return;
   if (event === "quota_warning" && !cfg.notifyOnQuota) return;
   if (event === "auth_error" && !cfg.notifyOnAuthError) return;
+
+  const dedupKey = `${event}:${details?.email || "global"}`;
+  const lastSent = recentWebhookAlerts.get(dedupKey);
+  if (lastSent && Date.now() - lastSent < WEBHOOK_COOLDOWN_MS) {
+    return;
+  }
+  recentWebhookAlerts.set(dedupKey, Date.now());
 
   try {
     const res = await dispatchWebhook(cfg.url, event, message, details);

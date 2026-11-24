@@ -20,12 +20,23 @@ ${bucketList}
 </ListAllMyBucketsResult>`;
 }
 
+export interface ListObjectsV2XmlOptions {
+  maxKeys?: number;
+  isTruncated?: boolean;
+  continuationToken?: string;
+  nextContinuationToken?: string;
+}
+
 export function xmlListObjectsV2(
   bucketName: string,
   prefix: string,
   contents: { key: string; size: number; etag: string; updatedAt: string }[],
-  commonPrefixes: string[] = []
+  commonPrefixes: string[] = [],
+  options?: ListObjectsV2XmlOptions
 ): string {
+  const maxKeys = options?.maxKeys ?? 1000;
+  const isTruncated = options?.isTruncated ?? false;
+
   const contentsXml = contents
     .map(
       (c) => `  <Contents>
@@ -46,13 +57,21 @@ export function xmlListObjectsV2(
     )
     .join("\n");
 
+  const tokenXml = options?.continuationToken
+    ? `\n  <ContinuationToken>${escapeXml(options.continuationToken)}</ContinuationToken>`
+    : "";
+  const nextTokenXml =
+    isTruncated && options?.nextContinuationToken
+      ? `\n  <NextContinuationToken>${escapeXml(options.nextContinuationToken)}</NextContinuationToken>`
+      : "";
+
   return `<?xml version="1.0" encoding="UTF-8"?>
 <ListBucketResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
   <Name>${escapeXml(bucketName)}</Name>
   <Prefix>${escapeXml(prefix)}</Prefix>
   <KeyCount>${contents.length + commonPrefixes.length}</KeyCount>
-  <MaxKeys>1000</MaxKeys>
-  <IsTruncated>false</IsTruncated>
+  <MaxKeys>${maxKeys}</MaxKeys>
+  <IsTruncated>${isTruncated ? "true" : "false"}</IsTruncated>${tokenXml}${nextTokenXml}
 ${contentsXml}
 ${prefixesXml}
 </ListBucketResult>`;
@@ -65,6 +84,58 @@ export function xmlInitiateMultipart(bucket: string, key: string, uploadId: stri
   <Key>${escapeXml(key)}</Key>
   <UploadId>${escapeXml(uploadId)}</UploadId>
 </InitiateMultipartUploadResult>`;
+}
+
+export function xmlListMultipartUploads(
+  bucket: string,
+  uploads: { objectKey: string; uploadId: string; createdAt: string }[]
+): string {
+  const itemsXml = uploads
+    .map(
+      (u) => `  <Upload>
+    <Key>${escapeXml(u.objectKey)}</Key>
+    <UploadId>${escapeXml(u.uploadId)}</UploadId>
+    <StorageClass>STANDARD</StorageClass>
+    <Initiated>${escapeXml(u.createdAt)}</Initiated>
+  </Upload>`
+    )
+    .join("\n");
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<ListMultipartUploadsResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
+  <Bucket>${escapeXml(bucket)}</Bucket>
+  <MaxUploads>1000</MaxUploads>
+  <IsTruncated>false</IsTruncated>
+${itemsXml}
+</ListMultipartUploadsResult>`;
+}
+
+export function xmlListParts(
+  bucket: string,
+  key: string,
+  uploadId: string,
+  parts: { partNumber: number; etag: string; size: number }[]
+): string {
+  const partsXml = parts
+    .map(
+      (p) => `  <Part>
+    <PartNumber>${p.partNumber}</PartNumber>
+    <ETag>"${escapeXml(p.etag)}"</ETag>
+    <Size>${p.size}</Size>
+  </Part>`
+    )
+    .join("\n");
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<ListPartsResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
+  <Bucket>${escapeXml(bucket)}</Bucket>
+  <Key>${escapeXml(key)}</Key>
+  <UploadId>${escapeXml(uploadId)}</UploadId>
+  <StorageClass>STANDARD</StorageClass>
+  <MaxParts>1000</MaxParts>
+  <IsTruncated>false</IsTruncated>
+${partsXml}
+</ListPartsResult>`;
 }
 
 export function xmlCompleteMultipart(bucket: string, key: string, etag: string): string {

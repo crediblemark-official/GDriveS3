@@ -6,11 +6,18 @@ export interface GoogleTokens {
 }
 
 export class GoogleOAuth {
+  private tokenCache = new Map<string, { token: string; expiresAt: number }>();
+  private inFlightRefreshes = new Map<string, Promise<string>>();
+
   constructor(
     private clientId: string,
     private clientSecret: string,
     private redirectUri: string
   ) {}
+
+  private hashKey(refreshToken: string): string {
+    return new Bun.CryptoHasher("sha256").update(refreshToken).digest("hex");
+  }
 
   isConfigured(): boolean {
     return Boolean(this.clientId && this.clientSecret);
@@ -50,22 +57,48 @@ export class GoogleOAuth {
   }
 
   async refreshAccessToken(refreshToken: string): Promise<string> {
-    const res = await fetch("https://oauth2.googleapis.com/token", {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({
-        refresh_token: refreshToken,
-        client_id: this.clientId,
-        client_secret: this.clientSecret,
-        grant_type: "refresh_token",
-      }),
-    });
-
-    if (!res.ok) {
-      throw new Error(`Google token refresh gagal: ${await res.text()}`);
+    const cacheKey = this.hashKey(refreshToken);
+    const cached = this.tokenCache.get(cacheKey);
+    if (cached && cached.expiresAt > Date.now() + 5 * 60 * 1000) {
+      return cached.token;
     }
 
-    const data = (await res.json()) as { access_token: string };
-    return data.access_token;
+    const inFlight = this.inFlightRefreshes.get(cacheKey);
+    if (inFlight) {
+      return inFlight;
+    }
+
+    const refreshPromise = (async () => {
+      const res = await fetch("https://oauth2.googleapis.com/token", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          refresh_token: refreshToken,
+          client_id: this.clientId,
+          client_secret: this.clientSecret,
+          grant_type: "refresh_token",
+        }),
+      });
+
+      if (!res.ok) {
+        this.tokenCache.delete(cacheKey);
+        throw new Error(`Google token refresh gagal: ${await res.text()}`);
+      }
+
+      const data = (await res.json()) as { access_token: string; expires_in?: number };
+      const ttlMs = Math.max(60, Number(data.expires_in || 3600)) * 1000;
+      this.tokenCache.set(cacheKey, {
+        token: data.access_token,
+        expiresAt: Date.now() + ttlMs,
+      });
+      return data.access_token;
+    })();
+
+    this.inFlightRefreshes.set(cacheKey, refreshPromise);
+    try {
+      return await refreshPromise;
+    } finally {
+      this.inFlightRefreshes.delete(cacheKey);
+    }
   }
 }

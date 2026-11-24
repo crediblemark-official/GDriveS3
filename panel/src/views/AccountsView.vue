@@ -29,8 +29,14 @@
             </div>
 
             <div class="flex items-center gap-2">
-              <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 text-[11px] font-mono rounded-full font-medium bg-success-bg text-success border border-success-border">
-                <span class="w-1.5 h-1.5 rounded-full bg-success"></span>
+              <span
+                class="inline-flex items-center gap-1.5 px-2.5 py-0.5 text-[11px] font-mono rounded-full font-medium border"
+                :class="acc.status === 'connected' ? 'bg-success-bg text-success border-success-border' : acc.status === 'revoked' ? 'bg-danger-bg text-danger border-danger-border' : 'bg-warning-bg text-warning border-warning-border'"
+              >
+                <span
+                  class="w-1.5 h-1.5 rounded-full"
+                  :class="acc.status === 'connected' ? 'bg-success' : acc.status === 'revoked' ? 'bg-danger' : 'bg-warning'"
+                ></span>
                 <span class="capitalize">{{ acc.status }}</span>
               </span>
             </div>

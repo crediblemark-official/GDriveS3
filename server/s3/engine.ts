@@ -2,6 +2,7 @@ import { eq, and } from "drizzle-orm";
 import type { AppDatabase } from "../db/client";
 import {
   buckets,
+  driveAccounts,
   objects,
   type ManifestPart,
 } from "../db/schema";
@@ -9,7 +10,36 @@ import type { Balancer } from "../drive/balancer";
 import { DriveClient } from "../drive/client";
 import type { TokenCipher } from "../core/crypto";
 import type { GoogleOAuth } from "../drive/oauth";
+import { notifyWebhookIfEnabled } from "../core/webhook";
 import { MultipartEngine } from "./multipart";
+
+function parseByteRange(
+  rangeHeader: string,
+  totalSize: number
+): { start: number; end: number } | null {
+  const match = rangeHeader.trim().match(/^bytes=(\d*)-(\d*)$/i);
+  if (!match || totalSize <= 0) return null;
+  const [, rawStart, rawEnd] = match;
+  if (!rawStart && !rawEnd) return null;
+
+  let start: number;
+  let end: number;
+  if (!rawStart) {
+    // Suffix byte range: bytes=-500
+    const suffix = Number(rawEnd);
+    if (!Number.isFinite(suffix) || suffix <= 0) return null;
+    start = Math.max(0, totalSize - suffix);
+    end = totalSize - 1;
+  } else {
+    start = Number(rawStart);
+    end = rawEnd ? Math.min(Number(rawEnd), totalSize - 1) : totalSize - 1;
+  }
+
+  if (!Number.isFinite(start) || !Number.isFinite(end) || start < 0 || start > end || start >= totalSize) {
+    throw new Error("InvalidRange");
+  }
+  return { start, end };
+}
 
 export class S3Engine {
   private multipart: MultipartEngine;
@@ -138,28 +168,61 @@ export class S3Engine {
 
     if (!obj) throw new Error("NoSuchKey");
 
-    // Jika objek adalah multipart, gunakan stitched stream
+    // Jika objek adalah multipart, gunakan stitched stream (dengan dukungan Range)
     if (obj.isMultipart && obj.parts) {
-      const parts: ManifestPart[] = JSON.parse(obj.parts);
-      let currentPartIdx = 0;
+      const allParts: ManifestPart[] = JSON.parse(obj.parts);
+      const totalSize = obj.size || allParts.reduce((sum, p) => sum + p.size, 0);
+      const parsedRange = rangeHeader ? parseByteRange(rangeHeader, totalSize) : null;
+
+      interface PartSlice {
+        part: ManifestPart;
+        rangeHeader?: string;
+      }
+
+      const slices: PartSlice[] = [];
+      let offset = 0;
+      for (const part of allParts) {
+        const partStart = offset;
+        const partEnd = offset + part.size - 1;
+        offset += part.size;
+
+        if (!parsedRange) {
+          slices.push({ part });
+        } else if (partEnd >= parsedRange.start && partStart <= parsedRange.end) {
+          const localStart = Math.max(0, parsedRange.start - partStart);
+          const localEnd = Math.min(part.size - 1, parsedRange.end - partStart);
+          slices.push({
+            part,
+            rangeHeader: `bytes=${localStart}-${localEnd}`,
+          });
+        }
+      }
+
+      let currentSliceIdx = 0;
       let currentReader: ReadableStreamDefaultReader<Uint8Array> | null = null;
       const self = this;
 
       const stitchedStream = new ReadableStream<Uint8Array>({
         async pull(controller) {
-          while (currentPartIdx < parts.length) {
+          while (currentSliceIdx < slices.length) {
             if (!currentReader) {
-              const part = parts[currentPartIdx];
-              const { accessToken } = await self.getAccountToken(part.accountId);
-              const partRes = await DriveClient.downloadStream(accessToken, part.driveFileId);
-              if (!partRes.body) throw new Error("Gagal membaca part stream dari Drive");
+              const slice = slices[currentSliceIdx];
+              const { accessToken } = await self.getAccountToken(slice.part.accountId);
+              const partRes = await DriveClient.downloadStream(
+                accessToken,
+                slice.part.driveFileId,
+                slice.rangeHeader
+              );
+              if ((!partRes.ok && partRes.status !== 206) || !partRes.body) {
+                throw new Error(`Gagal membaca part stream dari Drive (HTTP ${partRes.status})`);
+              }
               currentReader = partRes.body.getReader();
             }
 
             const { done, value } = await currentReader.read();
             if (done) {
               currentReader = null;
-              currentPartIdx++;
+              currentSliceIdx++;
               continue;
             }
 
@@ -170,15 +233,25 @@ export class S3Engine {
         },
       });
 
+      const responseHeaders: Record<string, string> = {
+        "Content-Type": obj.contentType || "application/octet-stream",
+        ETag: `"${obj.etag}"`,
+        "Accept-Ranges": "bytes",
+      };
+
+      if (parsedRange) {
+        const contentLength = parsedRange.end - parsedRange.start + 1;
+        responseHeaders["Content-Length"] = String(contentLength);
+        responseHeaders["Content-Range"] = `bytes ${parsedRange.start}-${parsedRange.end}/${totalSize}`;
+      } else {
+        responseHeaders["Content-Length"] = String(totalSize);
+      }
+
       return {
         obj,
         response: new Response(stitchedStream, {
-          status: 200,
-          headers: {
-            "Content-Type": obj.contentType || "application/octet-stream",
-            "Content-Length": String(obj.size || 0),
-            ETag: `"${obj.etag}"`,
-          },
+          status: parsedRange ? 206 : 200,
+          headers: responseHeaders,
         }),
       };
     }
@@ -187,6 +260,10 @@ export class S3Engine {
 
     const { accessToken } = await this.getAccountToken(obj.accountId);
     const driveRes = await DriveClient.downloadStream(accessToken, obj.driveFileId, rangeHeader);
+    if (!driveRes.ok && driveRes.status !== 206) {
+      if (driveRes.status === 416) throw new Error("InvalidRange");
+      throw new Error(`Gagal mengunduh file dari Drive (HTTP ${driveRes.status})`);
+    }
 
     return { obj, response: driveRes };
   }
@@ -207,9 +284,11 @@ export class S3Engine {
       const parts: ManifestPart[] = JSON.parse(obj.parts);
       for (const p of parts) {
         this.deleteDriveFile(p.accountId, p.driveFileId).catch(() => {});
+        this.decrementAccountUsage(p.accountId, p.size);
       }
     } else if (obj.driveFileId && obj.accountId) {
       this.deleteDriveFile(obj.accountId, obj.driveFileId).catch(() => {});
+      this.decrementAccountUsage(obj.accountId, obj.size || 0);
     }
 
     this.db.delete(objects).where(eq(objects.id, obj.id)).run();
@@ -235,7 +314,41 @@ export class S3Engine {
 
     if (!srcObj) throw new Error("NoSuchKey");
 
-    if (srcObj.isMultipart) {
+    // Hapus objek tujuan lama jika melakukan overwrite (menghindari duplikasi & mematuhi UNIQUE constraint)
+    if (srcBucket.id !== dstBucket.id || srcKey !== dstKey) {
+      await this.deleteObject(dstBucketName, dstKey);
+    } else {
+      return { etag: srcObj.etag };
+    }
+
+    if (srcObj.isMultipart && srcObj.parts) {
+      const srcParts: ManifestPart[] = JSON.parse(srcObj.parts);
+      const copiedParts: ManifestPart[] = [];
+
+      for (let idx = 0; idx < srcParts.length; idx++) {
+        const part = srcParts[idx];
+        const { account, accessToken } = await this.getAccountToken(part.accountId);
+        const rootFolderId = account.folderId || "";
+        const targetFolderId = await DriveClient.ensureSubfolder(
+          accessToken,
+          dstBucketName,
+          rootFolderId
+        );
+        const newDriveFileId = await DriveClient.copyFile(
+          accessToken,
+          part.driveFileId,
+          `${dstKey}.part-${idx + 1}`,
+          targetFolderId || rootFolderId
+        );
+        copiedParts.push({
+          accountId: part.accountId,
+          driveFileId: newDriveFileId,
+          size: part.size,
+          etag: part.etag,
+        });
+        this.balancer.recordUsage(part.accountId, part.size);
+      }
+
       const now = new Date().toISOString();
       this.db
         .insert(objects)
@@ -247,7 +360,7 @@ export class S3Engine {
           etag: srcObj.etag,
           contentType: srcObj.contentType,
           metadata: srcObj.metadata,
-          parts: srcObj.parts,
+          parts: JSON.stringify(copiedParts),
           isMultipart: 1,
           createdAt: now,
           updatedAt: now,
@@ -289,6 +402,7 @@ export class S3Engine {
       })
       .run();
 
+    this.balancer.recordUsage(srcObj.accountId!, srcObj.size || 0);
     return { etag: srcObj.etag };
   }
 
@@ -310,18 +424,55 @@ export class S3Engine {
     return this.multipart.abort(uploadId);
   }
 
+  listMultipartUploads(bucketName: string) {
+    return this.multipart.listUploads(bucketName);
+  }
+
+  listParts(uploadId: string) {
+    return this.multipart.listParts(uploadId);
+  }
+
   sweepStaleMultipartUploads(maxAgeMs?: number) {
     return this.multipart.sweepStale(maxAgeMs);
   }
 
+  private decrementAccountUsage(accountId: string, bytes: number) {
+    if (bytes <= 0) return;
+    const acc = this.db.select().from(driveAccounts).where(eq(driveAccounts.id, accountId)).get();
+    if (!acc) return;
+    const nextUsage = Math.max(0, (acc.storageUsage || 0) - bytes);
+    this.db
+      .update(driveAccounts)
+      .set({ storageUsage: nextUsage, updatedAt: new Date().toISOString() })
+      .where(eq(driveAccounts.id, accountId))
+      .run();
+  }
+
   private async getAccountToken(accountId: string) {
-    const { driveAccounts } = await import("../db/schema");
     const account = this.db.select().from(driveAccounts).where(eq(driveAccounts.id, accountId)).get();
     if (!account) throw new Error("Account not found");
 
-    const refresh = await this.cipher.decrypt(account.refreshToken);
-    const accessToken = await this.oauth.refreshAccessToken(refresh);
-    return { account, accessToken };
+    try {
+      const refresh = await this.cipher.decrypt(account.refreshToken);
+      const accessToken = await this.oauth.refreshAccessToken(refresh);
+      return { account, accessToken };
+    } catch (err: any) {
+      const msg = String(err?.message || "");
+      if (msg.includes("token refresh") || msg.includes("invalid_grant")) {
+        this.db
+          .update(driveAccounts)
+          .set({ status: "revoked", updatedAt: new Date().toISOString() })
+          .where(eq(driveAccounts.id, account.id))
+          .run();
+      }
+      void notifyWebhookIfEnabled(
+        this.db,
+        "auth_error",
+        `Gagal refresh token OAuth untuk ${account.email}: ${msg}`,
+        { email: account.email }
+      );
+      throw err;
+    }
   }
 
   private async deleteDriveFile(accountId: string, driveFileId: string) {

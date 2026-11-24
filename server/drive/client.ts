@@ -1,4 +1,9 @@
 const FOLDER_NAME = "G3 Storage";
+const SUBFOLDER_CACHE_TTL_MS = 5 * 60 * 1000;
+
+function escapeDriveQuery(value: string): string {
+  return value.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+}
 
 export interface AccountDriveInfo {
   email: string;
@@ -62,7 +67,7 @@ export class DriveClient {
     return created.id;
   }
 
-  private static subfolderCache = new Map<string, string>();
+  private static subfolderCache = new Map<string, { id: string; expiresAt: number }>();
 
   static async ensureSubfolder(
     accessToken: string,
@@ -71,11 +76,14 @@ export class DriveClient {
   ): Promise<string> {
     if (!parentFolderId) return "";
     const cacheKey = `${parentFolderId}:${subfolderName}`;
-    if (this.subfolderCache.has(cacheKey)) {
-      return this.subfolderCache.get(cacheKey)!;
+    const cached = this.subfolderCache.get(cacheKey);
+    if (cached && cached.expiresAt > Date.now()) {
+      return cached.id;
     }
 
-    const q = `name = '${subfolderName}' and '${parentFolderId}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false`;
+    const safeName = escapeDriveQuery(subfolderName);
+    const safeParent = escapeDriveQuery(parentFolderId);
+    const q = `name = '${safeName}' and '${safeParent}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false`;
     const listRes = await fetch(
       `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id,name)`,
       { headers: { Authorization: `Bearer ${accessToken}` } }
@@ -84,7 +92,10 @@ export class DriveClient {
     if (listRes.ok) {
       const data = (await listRes.json()) as { files?: { id: string }[] };
       if (data.files && data.files.length > 0) {
-        this.subfolderCache.set(cacheKey, data.files[0].id);
+        this.subfolderCache.set(cacheKey, {
+          id: data.files[0].id,
+          expiresAt: Date.now() + SUBFOLDER_CACHE_TTL_MS,
+        });
         return data.files[0].id;
       }
     }
@@ -107,7 +118,10 @@ export class DriveClient {
       throw new Error(`Gagal membuat folder bucket ${subfolderName}: ${await createRes.text()}`);
     }
     const created = (await createRes.json()) as { id: string };
-    this.subfolderCache.set(cacheKey, created.id);
+    this.subfolderCache.set(cacheKey, {
+      id: created.id,
+      expiresAt: Date.now() + SUBFOLDER_CACHE_TTL_MS,
+    });
     return created.id;
   }
 

@@ -12,7 +12,7 @@ import { S3Engine } from "./s3/engine";
 import { createS3Router } from "./s3/routes";
 import { createApiRouter } from "./api/routes";
 import { existsSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve, sep } from "node:path";
 import { eq } from "drizzle-orm";
 
 async function main() {
@@ -83,22 +83,33 @@ async function main() {
     .listen({ port: config.s3Port, hostname: config.host });
 
   // 5. Server 2: Web Panel & REST API Listener (Port 8787)
-  const apiRouter = createApiRouter(db, oauth, cipher, s3Engine);
+  const apiRouter = createApiRouter(db, oauth, cipher, s3Engine, {
+    s3PublicUrl: config.s3PublicUrl,
+    s3Port: config.s3Port,
+  });
   const panelApp = new Elysia()
     .use(createHttpLogger("api"))
-    .use(cors())
+    .use(
+      cors({
+        origin: config.isDev
+          ? ["http://localhost:5173", "http://127.0.0.1:5173", `http://localhost:${config.port}`]
+          : false,
+      })
+    )
     .use(apiRouter);
 
   // Serve static dist panel jika ada
-  const panelDist = join(import.meta.dir, "../panel/dist");
+  const panelDist = resolve(import.meta.dir, "../panel/dist");
   if (existsSync(panelDist)) {
     panelApp.get("*", async ({ params }) => {
       const subpath = params["*"];
       if (subpath) {
-        const targetPath = join(panelDist, subpath);
-        const file = Bun.file(targetPath);
-        if (await file.exists()) {
-          return file;
+        const targetPath = resolve(panelDist, subpath);
+        if (targetPath.startsWith(panelDist + sep)) {
+          const file = Bun.file(targetPath);
+          if (await file.exists()) {
+            return file;
+          }
         }
       }
       return Bun.file(join(panelDist, "index.html"));

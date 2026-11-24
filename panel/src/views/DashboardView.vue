@@ -76,7 +76,7 @@
             <AppIcon name="server" class="w-4 h-4 text-muted" />
           </div>
           <div class="p-2.5 bg-canvas border border-subtle rounded-lg font-mono text-xs text-primary break-all select-all">
-            http://localhost:9000
+            {{ stats.s3Endpoint }}
           </div>
         </div>
 
@@ -162,7 +162,7 @@
 
     <!-- Modular Integration Code Snippets -->
     <div class="border-b border-subtle">
-      <CodeSnippetsCard />
+      <CodeSnippetsCard :endpoint="stats.s3Endpoint" />
     </div>
 
     <!-- Accounts Pool Overview (Swiss Hairline Docked) -->
@@ -193,8 +193,14 @@
             <div>
               <div class="font-semibold text-primary font-mono text-xs">{{ acc.email }}</div>
               <div class="text-[11px] text-muted flex items-center gap-1.5 mt-0.5">
-                <span class="inline-flex items-center gap-1 text-success">
-                  <span class="w-1.5 h-1.5 rounded-full bg-success"></span>
+                <span
+                  class="inline-flex items-center gap-1"
+                  :class="acc.status === 'connected' ? 'text-success' : acc.status === 'revoked' ? 'text-danger' : 'text-warning'"
+                >
+                  <span
+                    class="w-1.5 h-1.5 rounded-full"
+                    :class="acc.status === 'connected' ? 'bg-success' : acc.status === 'revoked' ? 'bg-danger' : 'bg-warning'"
+                  ></span>
                   <span class="capitalize">{{ acc.status }}</span>
                 </span>
                 <span>&bull;</span>
@@ -239,6 +245,7 @@ const stats = ref({
   totalStorageLimit: 0,
   totalStorageUsage: 0,
   totalObjectBytes: 0,
+  s3Endpoint: "http://localhost:9000",
   accounts: [] as any[],
 });
 

@@ -46,6 +46,15 @@ import { ref, computed } from "vue";
 import AppIcon from "./AppIcon.vue";
 import { useToast } from "../composables/useToast";
 
+const props = withDefaults(
+  defineProps<{
+    endpoint?: string;
+  }>(),
+  {
+    endpoint: "http://localhost:9000",
+  }
+);
+
 const toast = useToast();
 const activeTab = ref("aws-cli");
 
@@ -57,6 +66,7 @@ const snippetTabs = [
 ];
 
 const activeCode = computed(() => {
+  const ep = props.endpoint || "http://localhost:9000";
   switch (activeTab.value) {
     case "aws-cli":
       return `# Konfigurasi AWS CLI menggunakan endpoint G3
@@ -64,16 +74,16 @@ export AWS_ACCESS_KEY_ID="G3_YOUR_ACCESS_KEY_ID"
 export AWS_SECRET_ACCESS_KEY="G3_YOUR_SECRET_KEY"
 
 # List semua bucket
-aws s3 ls --endpoint-url http://localhost:9000
+aws s3 ls --endpoint-url ${ep}
 
 # Unggah file ke bucket
-aws s3 cp myfile.zip s3://testos/myfile.zip --endpoint-url http://localhost:9000`;
+aws s3 cp myfile.zip s3://testos/myfile.zip --endpoint-url ${ep}`;
 
     case "nodejs":
       return `import { S3Client, PutObjectCommand, ListObjectsV2Command } from "@aws-sdk/client-s3";
 
 const s3 = new S3Client({
-  endpoint: "http://localhost:9000",
+  endpoint: "${ep}",
   region: "us-east-1",
   credentials: {
     accessKeyId: "G3_YOUR_ACCESS_KEY_ID",
@@ -95,7 +105,7 @@ await s3.send(new PutObjectCommand({
 
 s3 = boto3.client(
     's3',
-    endpoint_url='http://localhost:9000',
+    endpoint_url='${ep}',
     aws_access_key_id='G3_YOUR_ACCESS_KEY_ID',
     aws_secret_access_key='G3_YOUR_SECRET_KEY',
     region_name='us-east-1'
@@ -113,7 +123,7 @@ provider = Other
 env_auth = false
 access_key_id = G3_YOUR_ACCESS_KEY_ID
 secret_access_key = G3_YOUR_SECRET_KEY
-endpoint = http://localhost:9000
+endpoint = ${ep}
 force_path_style = true`;
 
     default:

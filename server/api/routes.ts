@@ -22,7 +22,8 @@ export function createApiRouter(
   db: AppDatabase,
   oauth: GoogleOAuth,
   cipher: TokenCipher,
-  engine: S3Engine
+  engine: S3Engine,
+  opts?: { s3PublicUrl?: string; s3Port?: number }
 ) {
   return new Elysia({ prefix: "/api" })
     .onBeforeHandle(({ request, cookie: { g3_session }, set }) => {
@@ -43,8 +44,8 @@ export function createApiRouter(
     })
     .use(createAuthRoutes(db))
     .use(createAccountsRoutes(db, oauth, cipher))
-    .use(createBucketsRoutes(db, cipher, engine))
+    .use(createBucketsRoutes(db, cipher, engine, opts))
     .use(createKeysRoutes(db, cipher))
-    .use(createSettingsRoutes(db, engine))
+    .use(createSettingsRoutes(db, engine, opts))
     .use(createLogsRoutes());
 }

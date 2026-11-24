@@ -11,8 +11,94 @@ import {
   xmlError,
   xmlCompleteMultipart,
   xmlInitiateMultipart,
+  xmlListMultipartUploads,
+  xmlListParts,
   xmlDeleteResult,
 } from "./xml";
+
+const BUCKET_NAME_RE = /^[a-z0-9.-]{3,63}$/;
+
+/**
+ * Decodes AWS SigV4 streaming payload framing (`aws-chunked`) into raw bytes.
+ */
+function decodeAwsChunkedStream(body: ReadableStream<Uint8Array>): ReadableStream<Uint8Array> {
+  let buffer: Uint8Array = new Uint8Array(0);
+  let remainingChunkBytes = 0;
+  let expectingCrlfAfterData = false;
+  let finished = false;
+
+  const append = (a: Uint8Array, b: Uint8Array): Uint8Array => {
+    const out = new Uint8Array(a.length + b.length);
+    out.set(a, 0);
+    out.set(b, a.length);
+    return out;
+  };
+
+  const findCrlf = (buf: Uint8Array): number => {
+    for (let i = 0; i < buf.length - 1; i++) {
+      if (buf[i] === 13 && buf[i + 1] === 10) return i;
+    }
+    return -1;
+  };
+
+  return body.pipeThrough(
+    new TransformStream<Uint8Array, Uint8Array>({
+      transform(chunk, controller) {
+        if (finished) return;
+        buffer = append(buffer, chunk);
+
+        while (buffer.length > 0 && !finished) {
+          if (expectingCrlfAfterData) {
+            if (buffer.length < 2) break;
+            if (buffer[0] === 13 && buffer[1] === 10) {
+              buffer = buffer.subarray(2);
+            }
+            expectingCrlfAfterData = false;
+            continue;
+          }
+
+          if (remainingChunkBytes > 0) {
+            const take = Math.min(remainingChunkBytes, buffer.length);
+            controller.enqueue(buffer.subarray(0, take));
+            buffer = buffer.subarray(take);
+            remainingChunkBytes -= take;
+            if (remainingChunkBytes === 0) {
+              expectingCrlfAfterData = true;
+            }
+            continue;
+          }
+
+          const lineEnd = findCrlf(buffer);
+          if (lineEnd < 0) break;
+
+          const headerLine = new TextDecoder().decode(buffer.subarray(0, lineEnd));
+          buffer = buffer.subarray(lineEnd + 2);
+          const hexLen = headerLine.split(";")[0].trim();
+          const parsedLen = parseInt(hexLen, 16);
+          if (!Number.isFinite(parsedLen) || parsedLen < 0) {
+            controller.error(new Error("Invalid aws-chunked framing"));
+            return;
+          }
+          if (parsedLen === 0) {
+            finished = true;
+            buffer = new Uint8Array(0);
+            break;
+          }
+          remainingChunkBytes = parsedLen;
+        }
+      },
+    })
+  );
+}
+
+function unwrapPayloadStream(request: Request): ReadableStream<Uint8Array> | null {
+  if (!request.body) return null;
+  const contentSha = request.headers.get("x-amz-content-sha256") || "";
+  if (contentSha.startsWith("STREAMING-AWS4-HMAC-SHA256-PAYLOAD")) {
+    return decodeAwsChunkedStream(request.body);
+  }
+  return request.body;
+}
 
 export function createS3Router(
   db: AppDatabase,
@@ -65,7 +151,7 @@ export function createS3Router(
     return xmlListBuckets(allBuckets);
   });
 
-  // 2. Bucket Operations (Create, Delete, List Objects)
+  // 2. Bucket Operations (Create, Delete, List Objects, List Multipart Uploads)
   router.get("/:bucket", async ({ params, query, set }) => {
     const bucketName = params.bucket;
     const bucket = db.select().from(buckets).where(eq(buckets.name, bucketName)).get();
@@ -76,17 +162,41 @@ export function createS3Router(
       return xmlError("NoSuchBucket", "Bucket tidak ditemukan", bucketName);
     }
 
+    if (query.uploads !== undefined) {
+      const uploads = engine.listMultipartUploads(bucketName);
+      set.headers["Content-Type"] = "application/xml";
+      return xmlListMultipartUploads(bucketName, uploads);
+    }
+
     const prefix = (query.prefix as string) || "";
     const delimiter = (query.delimiter as string) || "";
+    const rawMaxKeys = Number(query["max-keys"]);
+    const maxKeys = Number.isFinite(rawMaxKeys) && rawMaxKeys > 0 ? Math.min(1000, Math.floor(rawMaxKeys)) : 1000;
+    const continuationToken = (query["continuation-token"] as string) || "";
+    const startAfter = (query["start-after"] as string) || "";
+
+    let cursorKey = startAfter;
+    if (continuationToken) {
+      try {
+        cursorKey = Buffer.from(continuationToken, "base64").toString("utf-8");
+      } catch {
+        cursorKey = continuationToken;
+      }
+    }
 
     const allObjects = db
       .select()
       .from(objects)
       .where(eq(objects.bucketId, bucket.id))
-      .all();
+      .all()
+      .sort((a, b) => a.objectKey.localeCompare(b.objectKey));
 
-    const contents: { key: string; size: number; etag: string; updatedAt: string }[] = [];
-    const commonPrefixes = new Set<string>();
+    type ListedItem =
+      | { kind: "content"; sortKey: string; data: { key: string; size: number; etag: string; updatedAt: string } }
+      | { kind: "prefix"; sortKey: string };
+
+    const seenPrefixes = new Set<string>();
+    const items: ListedItem[] = [];
 
     for (const obj of allObjects) {
       if (!obj.objectKey.startsWith(prefix)) continue;
@@ -95,25 +205,63 @@ export function createS3Router(
         const afterPrefix = obj.objectKey.slice(prefix.length);
         const idx = afterPrefix.indexOf(delimiter);
         if (idx >= 0) {
-          commonPrefixes.add(prefix + afterPrefix.slice(0, idx + 1));
+          const cp = prefix + afterPrefix.slice(0, idx + 1);
+          if (!seenPrefixes.has(cp)) {
+            seenPrefixes.add(cp);
+            if (!cursorKey || cp > cursorKey) {
+              items.push({ kind: "prefix", sortKey: cp });
+            }
+          }
           continue;
         }
       }
 
-      contents.push({
-        key: obj.objectKey,
-        size: obj.size,
-        etag: obj.etag,
-        updatedAt: obj.updatedAt,
-      });
+      if (!cursorKey || obj.objectKey > cursorKey) {
+        items.push({
+          kind: "content",
+          sortKey: obj.objectKey,
+          data: {
+            key: obj.objectKey,
+            size: obj.size,
+            etag: obj.etag,
+            updatedAt: obj.updatedAt,
+          },
+        });
+      }
     }
 
+    items.sort((a, b) => a.sortKey.localeCompare(b.sortKey));
+    const isTruncated = items.length > maxKeys;
+    const page = items.slice(0, maxKeys);
+    const nextContinuationToken =
+      isTruncated && page.length > 0
+        ? Buffer.from(page[page.length - 1].sortKey).toString("base64")
+        : undefined;
+
+    const contents = page
+      .filter((item): item is Extract<ListedItem, { kind: "content" }> => item.kind === "content")
+      .map((item) => item.data);
+    const commonPrefixes = page
+      .filter((item): item is Extract<ListedItem, { kind: "prefix" }> => item.kind === "prefix")
+      .map((item) => item.sortKey);
+
     set.headers["Content-Type"] = "application/xml";
-    return xmlListObjectsV2(bucketName, prefix, contents, Array.from(commonPrefixes));
+    return xmlListObjectsV2(bucketName, prefix, contents, commonPrefixes, {
+      maxKeys,
+      isTruncated,
+      continuationToken: continuationToken || undefined,
+      nextContinuationToken,
+    });
   });
 
   router.put("/:bucket", async ({ params, set }) => {
     const bucketName = params.bucket;
+    if (!BUCKET_NAME_RE.test(bucketName)) {
+      set.status = 400;
+      set.headers["Content-Type"] = "application/xml";
+      return xmlError("InvalidBucketName", "Nama bucket tidak valid (3-63 karakter a-z, 0-9, dot, minus)", bucketName);
+    }
+
     const existing = db.select().from(buckets).where(eq(buckets.name, bucketName)).get();
 
     if (existing) {
@@ -225,7 +373,8 @@ export function createS3Router(
 
     // S3 Multipart UploadPart (?uploadId=...&partNumber=...)
     if (query.uploadId && query.partNumber) {
-      if (!request.body) {
+      const partBody = unwrapPayloadStream(request);
+      if (!partBody) {
         set.status = 400;
         set.headers["Content-Type"] = "application/xml";
         return xmlError("IncompleteBody", "Request body kosong", key);
@@ -234,7 +383,7 @@ export function createS3Router(
         const { etag } = await engine.uploadPart(
           query.uploadId as string,
           Number(query.partNumber),
-          request.body
+          partBody
         );
         set.headers["ETag"] = `"${etag}"`;
         set.status = 200;
@@ -275,7 +424,8 @@ export function createS3Router(
       }
     }
 
-    if (!request.body) {
+    const putBody = unwrapPayloadStream(request);
+    if (!putBody) {
       set.status = 400;
       set.headers["Content-Type"] = "application/xml";
       return xmlError("IncompleteBody", "Request body kosong", key);
@@ -287,7 +437,7 @@ export function createS3Router(
         key,
         contentType,
         JSON.stringify(metadata),
-        request.body
+        putBody
       );
       set.headers["ETag"] = `"${etag}"`;
       set.status = 200;
@@ -326,9 +476,23 @@ export function createS3Router(
     return "";
   });
 
-  router.get("/:bucket/*", async ({ params, request, set }) => {
+  router.get("/:bucket/*", async ({ params, query, request, set }) => {
     const bucketName = params.bucket;
     const key = params["*"];
+
+    // S3 ListParts (?uploadId=...)
+    if (query.uploadId) {
+      try {
+        const { parts } = engine.listParts(query.uploadId as string);
+        set.headers["Content-Type"] = "application/xml";
+        return xmlListParts(bucketName, key, query.uploadId as string, parts);
+      } catch (err: any) {
+        set.status = 404;
+        set.headers["Content-Type"] = "application/xml";
+        return xmlError("NoSuchUpload", err.message, key);
+      }
+    }
+
     const rangeHeader = request.headers.get("range");
 
     try {
@@ -348,9 +512,15 @@ export function createS3Router(
 
       return driveRes.body;
     } catch (err: any) {
+      const msg = String(err?.message || "");
+      if (msg === "InvalidRange") {
+        set.status = 416;
+        set.headers["Content-Type"] = "application/xml";
+        return xmlError("InvalidRange", "Requested range not satisfiable", key);
+      }
       set.status = 404;
       set.headers["Content-Type"] = "application/xml";
-      return xmlError("NoSuchKey", err.message, key);
+      return xmlError("NoSuchKey", msg, key);
     }
   });
 

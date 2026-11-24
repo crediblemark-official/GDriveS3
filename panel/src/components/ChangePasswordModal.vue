@@ -84,6 +84,7 @@ import { useToast } from "../composables/useToast";
 
 const emit = defineEmits<{
   (e: "close"): void;
+  (e: "changed"): void;
 }>();
 
 const toast = useToast();
@@ -111,6 +112,7 @@ async function submit() {
 
     if (res.ok) {
       toast.success("Password admin berhasil diperbarui");
+      emit("changed");
       emit("close");
     } else {
       const err = await res.json().catch(() => ({}));
