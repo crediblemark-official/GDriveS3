@@ -194,8 +194,24 @@ export function createApiRouter(
       }
 
       // Redirect balik ke dashboard panel
-      set.redirect = "/#/accounts";
-      return "Berhasil menautkan akun Google Drive!";
+      set.headers["Content-Type"] = "text/html; charset=utf-8";
+      return `<!DOCTYPE html>
+<html>
+  <head>
+    <meta http-equiv="refresh" content="0; url=/#/accounts" />
+    <title>Berhasil Menautkan Akun</title>
+  </head>
+  <body style="font-family: system-ui, -apple-system, sans-serif; background: #09090b; color: #f4f4f5; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0;">
+    <div style="text-align: center; padding: 24px; border: 1px solid #27272a; border-radius: 16px; background: #18181b; box-shadow: 0 4px 12px rgba(0,0,0,0.5);">
+      <h2 style="margin: 0 0 8px 0; color: #10b981;">✅ Berhasil Menautkan Akun Google Drive!</h2>
+      <p style="margin: 0 0 16px 0; color: #a1a1aa; font-size: 14px;">Akun <strong>${info.email}</strong> berhasil terhubung ke pool G3.</p>
+      <a href="/#/accounts" style="display: inline-block; padding: 8px 16px; background: #f4f4f5; color: #09090b; border-radius: 8px; text-decoration: none; font-size: 13px; font-weight: 600;">Kembali ke Panel &rarr;</a>
+    </div>
+    <script>
+      window.location.replace("/#/accounts");
+    </script>
+  </body>
+</html>`;
     } catch (err: any) {
       set.status = 500;
       return `OAuth Error: ${err.message}`;
