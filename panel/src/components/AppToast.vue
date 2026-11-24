@@ -42,8 +42,7 @@ const typeAccentClasses: Record<string, string> = {
         <div class="flex items-center gap-2.5 min-w-0 flex-1">
           <AppIcon
             :name="typeIcons[toast.type] || 'info'"
-            size="18"
-            class="shrink-0"
+            class="w-4.5 h-4.5 shrink-0"
           />
           <p class="text-sm font-medium leading-snug truncate">
             {{ toast.message }}
@@ -68,7 +67,7 @@ const typeAccentClasses: Record<string, string> = {
             class="p-1 rounded text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800 active:scale-90 transition-all cursor-pointer"
             aria-label="Tutup"
           >
-            <AppIcon name="x" size="14" />
+            <AppIcon name="x" class="w-3.5 h-3.5" />
           </button>
         </div>
       </div>

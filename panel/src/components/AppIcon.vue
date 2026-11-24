@@ -1091,13 +1091,21 @@ const sizeClasses: Record<string, string> = {
   sm: 'w-4 h-4',
   md: 'w-4.5 h-4.5',
   lg: 'w-5 h-5',
-  xl: 'w-6 h-6'
+  xl: 'w-6 h-6',
+  '12': 'w-3 h-3',
+  '14': 'w-3.5 h-3.5',
+  '16': 'w-4 h-4',
+  '18': 'w-4.5 h-4.5',
+  '20': 'w-5 h-5',
+  '24': 'w-6 h-6',
 }
 
 const computedClasses = computed(() => {
   const base = ['inline-block shrink-0 transition-colors']
-  if (props.size && sizeClasses[props.size]) {
-    base.push(sizeClasses[props.size])
+  if (props.size && sizeClasses[String(props.size)]) {
+    base.push(sizeClasses[String(props.size)])
+  } else if (!props.size) {
+    base.push('w-4 h-4')
   }
   return base.join(' ')
 })
