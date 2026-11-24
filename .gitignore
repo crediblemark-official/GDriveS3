@@ -7,6 +7,8 @@ dist/
 out/
 g3-app
 g3-app.exe
+docs/.vitepress/dist
+docs/.vitepress/cache
 
 # Database & Runtime data
 g3-data/

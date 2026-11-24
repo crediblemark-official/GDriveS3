@@ -1,72 +1,85 @@
-# G3 Storage (Bun + Elysia + Vue 3)
+# G3 Storage
 
 > **S3-Compatible Object Storage over Google Drive.**  
-> Backend dibangun dengan **Bun + ElysiaJS + Drizzle ORM**, dan Admin Web Panel dengan **Vue 3 + Vite + Tailwind CSS v4**.
+> Built with **Bun + ElysiaJS + Drizzle ORM (`bun:sqlite`)**, and a **Vue 3 + Vite + Tailwind CSS v4** Admin Panel.
 
 ---
 
-## ⚡ Fitur Utama
+## Fitur Utama
 
-- **100% S3 Compatible**: Mendukung AWS Signature V4 (Authorization Header & Presigned URL), bucket operations, PutObject, GetObject (dengan byte-range streaming), CopyObject server-side di Google Drive, dan DeleteObject.
-- **Google Drive Storage Pool**: Menggabungkan banyak akun Google Drive menjadi satu pool penyimpanan besar dengan algoritma penyeimbang (*round-robin*, *least-used*, *fill-first*, *hash*).
-- **Zero Local Object Storage**: File tidak disimpan di disk lokal; byte di-stream langsung ke Google Drive API v3 secara *resumable*. Hanya metadata yang disimpan di SQLite lokal (`bun:sqlite`).
-- **Hemat RAM VPS**: Runtime Bun murni dengan idle RAM hanya ~30–40 MB (jauh lebih ringan dibanding Node.js/Go container).
-- **Single Root `node_modules`**: Dependensi terpadu di root tanpa bloat folder bersarang.
-- **Admin Panel Modern & Anti-Slop**: Dibangun dengan Vue 3 Composition API, Tailwind CSS v4, desain Swiss hairline grid, layered neutrals, sistem vektor SVG `<AppIcon>` (tanpa raw emoji), dan mobile-friendly bottom-sheet drawer.
+- **S3 Compatible API (`:9000`)**: Mendukung AWS Signature V4 (`Authorization` header & Presigned URL), `ListBuckets`, `CreateBucket`, `DeleteBucket`, `HeadBucket`, `PutObject`, `GetObject` (byte-range streaming), `HeadObject`, `CopyObject`, `DeleteObject`, `Multi-Object Delete`, dan **S3 Multipart Upload**.
+- **Google Drive Storage Pool**: Gabungkan beberapa akun Google Drive menjadi satu pool penyimpanan dengan strategi penyeimbang (*Round Robin*, *Least Used*, *Fill First*, *Hash Key*) serta pemetaan folder rapi `G3 Storage/<bucket>/`.
+- **Zero Local Object Storage**: File di-stream langsung ke Google Drive API v3 secara *resumable*; hanya metadata yang disimpan di SQLite lokal (`g3-data/g3.db`).
+- **Keamanan Terenkripsi**: Refresh token OAuth dan Secret Access Key dienkripsi di database dengan **AES-256-GCM**.
+- **Admin Web Panel (`:8787`)**: File Manager dengan navigasi folder virtual, pratinjau file, *sliced multipart upload* (>10 MB), generator Presigned URL 1-klik, dan pemantau kuota akun.
 
 ---
 
-## 🏗️ Struktur Direktori
+## Struktur Direktori
 
-```
+```text
 .
-├── server/                      # Backend (Bun + Elysia + Drizzle ORM)
+├── server/                 # Backend (Bun + Elysia + Drizzle ORM)
+│   ├── api/                # Panel REST API (auth, accounts, buckets, keys, settings)
+│   ├── core/               # Config, AES-256-GCM cipher, & terminal logger
+│   ├── db/                 # SQLite schema & bun:sqlite connection
+│   ├── drive/              # Google Drive OAuth2, Resumable Client, & Balancer
+│   ├── s3/                 # SigV4 auth, XML serializer, Multipart, & S3 Engine
+│   └── index.ts            # Main entrypoint dual listener (:9000 & :8787)
+├── panel/                  # Frontend Admin Panel (Vue 3 + Vite + Tailwind v4)
 │   └── src/
-│       ├── core/                # Config & AES-256-GCM token cipher
-│       ├── db/                  # SQLite schema & bun:sqlite connection
-│       ├── drive/               # Google Drive OAuth2 & Resumable Client
-│       ├── s3/                  # SigV4 auth, XML serializer, & S3 Engine
-│       ├── api/                 # Panel REST API (Auth, Buckets, Files, Keys)
-│       └── index.ts             # Main entrypoint dual listener (:9000 & :8787)
-├── panel/                       # Frontend Admin Panel (Vue 3 + Vite + Tailwind v4)
-│   └── src/
-│       ├── assets/              # Desain token & icon SVG AppIcon
-│       ├── components/          # AppLayout, BottomSheet, AppToast
-│       ├── views/               # Dashboard, Buckets, FileManager, Accounts, Keys
-│       └── main.ts              # Vue entry
-├── package.json                 # Single unified dependencies
-├── build.ts                     # Build & bundle pipeline
-└── tsconfig.json                # Strict TypeScript configuration
+│       ├── components/     # AppLayout, AppIcon, BottomSheet, Modals, Snippets
+│       ├── composables/    # useTheme & useToast
+│       ├── lib/            # API client & formatters
+│       └── views/          # Dashboard, Buckets, FileManager, Accounts, Keys, Login
+├── docs/                   # Dokumentasi & VitePress Live Docs
+│   ├── .vitepress/         # Konfigurasi VitePress
+│   ├── USER_GUIDE.md       # Panduan pengguna & setup Google OAuth
+│   └── ARCHITECTURE.md     # Referensi arsitektur & kriptografi
+├── tests/                  # Unit & integration tests (bun test)
+├── package.json            # Single root dependencies
+├── build.ts                # Production build pipeline
+└── tsconfig.json           # Strict TypeScript configuration
 ```
 
 ---
 
-## 🚀 Menjalankan Secara Lokal
+## Quick Start
 
-### 1. Salin Environment
+### 1. Instalasi & Konfigurasi Environment
 ```bash
+bun install
 cp .env.example .env
 ```
-Isi `G3_GOOGLE_CLIENT_ID` dan `G3_GOOGLE_CLIENT_SECRET` jika ingin menautkan akun Google Drive.
+Atur kredensial **Google OAuth 2.0** di `.env` (`G3_GOOGLE_CLIENT_ID`, `G3_GOOGLE_CLIENT_SECRET`, `G3_GOOGLE_REDIRECT_URI`). Lihat [Panduan Pengguna](docs/USER_GUIDE.md) untuk langkah lengkapnya.
 
-### 2. Jalankan Mode Development
+### 2. Menjalankan Mode Development
 ```bash
-# Terminal 1: Backend Server (S3 di :9000 & API di :8787)
+# Terminal 1: Backend Server (S3 di :9000 & API/Panel di :8787)
 bun run dev
 
 # Terminal 2: Vite Panel HMR (di :5173 dengan proxy ke :8787)
 bun run dev:panel
 ```
 
-### 3. Build untuk Production
+### 3. Build Production
 ```bash
 bun run build
 ```
-Hasil build panel statis akan otomatis disajikan langsung oleh Elysia di port `8787` (`http://localhost:8787`).
+Panel statis dari `panel/dist` akan otomatis disajikan oleh Elysia pada port `8787` (`http://localhost:8787`).
+
+### 4. Dokumentasi Live (VitePress)
+```bash
+# Preview dokumentasi secara lokal
+bun run docs:dev
+
+# Build situs dokumentasi statis ke docs/.vitepress/dist
+bun run docs:build
+```
 
 ---
 
-## 🧪 Pengujian via AWS CLI
+## Pengujian via AWS CLI
 
 Setelah membuat **Bucket** dan **S3 Access Key** di web panel:
 
@@ -74,12 +87,18 @@ Setelah membuat **Bucket** dan **S3 Access Key** di web panel:
 export AWS_ACCESS_KEY_ID="G3..."
 export AWS_SECRET_ACCESS_KEY="..."
 
-# Buat bucket via S3 API
+# Buat bucket
 aws s3 mb s3://my-bucket --endpoint-url http://localhost:9000
 
-# Upload file langsung ke Google Drive
+# Unggah file langsung ke Google Drive
 aws s3 cp ./file.pdf s3://my-bucket/ --endpoint-url http://localhost:9000
 
-# List file
+# List isi bucket
 aws s3 ls s3://my-bucket/ --endpoint-url http://localhost:9000
 ```
+
+---
+
+## Lisensi
+
+Dirilis di bawah lisensi [MIT](LICENSE).
