@@ -102,7 +102,7 @@
 
       <!-- Viewport App Workspace (Full-Width Viewport App Shell) -->
       <main class="flex-1 w-full overflow-y-auto">
-        <RouterView />
+        <RouterView v-if="headerMounted" />
       </main>
     </div>
 
@@ -163,9 +163,11 @@ const route = useRoute();
 const { isDark, toggle, initTheme } = useTheme();
 const showMobileMenu = ref(false);
 const showChangePassword = ref(false);
+const headerMounted = ref(false);
 
 onMounted(() => {
   initTheme();
+  headerMounted.value = true;
 });
 
 const navItems = [

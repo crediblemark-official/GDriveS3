@@ -2,28 +2,30 @@
   <div class="space-y-0">
     <!-- Teleport primary actions into Sticky Top Header -->
     <Teleport to="#header-actions">
-      <button
-        @click="showCreateFolderModal = true"
-        class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-surface hover:bg-surface-raised border border-subtle text-primary text-xs font-medium rounded-lg shadow-2xs hover:scale-[1.02] active:scale-[0.98] transition-all"
-        title="Buat Folder / Prefix"
-      >
-        <AppIcon name="folder" class="w-3.5 h-3.5 text-secondary" />
-        <span class="hidden sm:inline">Folder</span>
-      </button>
+      <div class="flex items-center gap-2">
+        <button
+          @click="showCreateFolderModal = true"
+          class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-surface hover:bg-surface-raised border border-subtle text-primary text-xs font-medium rounded-lg shadow-2xs hover:scale-[1.02] active:scale-[0.98] transition-all"
+          title="Buat Folder / Prefix"
+        >
+          <AppIcon name="folder" class="w-3.5 h-3.5 text-secondary" />
+          <span class="hidden sm:inline">Folder</span>
+        </button>
 
-      <label
-        class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-neutral-900 text-white dark:bg-white dark:text-neutral-950 text-xs font-semibold rounded-lg shadow-2xs hover:scale-[1.02] active:scale-[0.98] cursor-pointer transition-all disabled:opacity-50"
-      >
-        <AppIcon name="upload" class="w-3.5 h-3.5" />
-        <span>{{ uploading ? "Mengunggah..." : "Unggah" }}</span>
-        <input
-          type="file"
-          multiple
-          @change="handleFileInput"
-          :disabled="uploading"
-          class="hidden"
-        />
-      </label>
+        <label
+          class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-neutral-900 text-white dark:bg-white dark:text-neutral-950 text-xs font-semibold rounded-lg shadow-2xs hover:scale-[1.02] active:scale-[0.98] cursor-pointer transition-all disabled:opacity-50"
+        >
+          <AppIcon name="upload" class="w-3.5 h-3.5" />
+          <span>{{ uploading ? "Mengunggah..." : "Unggah" }}</span>
+          <input
+            type="file"
+            multiple
+            @change="handleFileInput"
+            :disabled="uploading"
+            class="hidden"
+          />
+        </label>
+      </div>
     </Teleport>
 
     <!-- Breadcrumb Navigation Bar (Swiss Hairline Docked) -->

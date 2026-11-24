@@ -2,33 +2,35 @@
   <div class="space-y-0">
     <!-- Teleport primary actions into Sticky Top Header -->
     <Teleport to="#header-actions">
-      <button
-        @click="autoRefresh = !autoRefresh"
-        class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-all hover:scale-[1.02] active:scale-[0.98]"
-        :class="autoRefresh ? 'bg-success-bg text-success border-success-border' : 'bg-surface text-secondary border-subtle hover:bg-surface-raised'"
-        title="Auto-refresh tiap 3 detik"
-      >
-        <span class="w-1.5 h-1.5 rounded-full" :class="autoRefresh ? 'bg-success animate-pulse' : 'bg-muted'"></span>
-        <span class="hidden sm:inline">Live</span>
-      </button>
+      <div class="flex items-center gap-2">
+        <button
+          @click="autoRefresh = !autoRefresh"
+          class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-all hover:scale-[1.02] active:scale-[0.98]"
+          :class="autoRefresh ? 'bg-success-bg text-success border-success-border' : 'bg-surface text-secondary border-subtle hover:bg-surface-raised'"
+          title="Auto-refresh tiap 3 detik"
+        >
+          <span class="w-1.5 h-1.5 rounded-full" :class="autoRefresh ? 'bg-success animate-pulse' : 'bg-muted'"></span>
+          <span class="hidden sm:inline">Live</span>
+        </button>
 
-      <button
-        @click="loadLogs"
-        class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-surface hover:bg-surface-raised border border-subtle text-primary transition-all hover:scale-[1.02] active:scale-[0.98] shadow-2xs"
-        title="Muat ulang log"
-      >
-        <AppIcon name="refresh" class="w-3.5 h-3.5 text-secondary" :class="{ 'animate-spin': loading }" />
-        <span class="hidden sm:inline">Muat</span>
-      </button>
+        <button
+          @click="loadLogs"
+          class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-surface hover:bg-surface-raised border border-subtle text-primary transition-all hover:scale-[1.02] active:scale-[0.98] shadow-2xs"
+          title="Muat ulang log"
+        >
+          <AppIcon name="refresh" class="w-3.5 h-3.5 text-secondary" :class="{ 'animate-spin': loading }" />
+          <span class="hidden sm:inline">Muat</span>
+        </button>
 
-      <button
-        @click="clearAllLogs"
-        class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-surface hover:bg-danger-bg border border-subtle hover:border-danger-border text-secondary hover:text-danger transition-all hover:scale-[1.02] active:scale-[0.98] shadow-2xs"
-        title="Bersihkan log memori"
-      >
-        <AppIcon name="trash" class="w-3.5 h-3.5" />
-        <span class="hidden sm:inline">Bersihkan</span>
-      </button>
+        <button
+          @click="clearAllLogs"
+          class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-surface hover:bg-danger-bg border border-subtle hover:border-danger-border text-secondary hover:text-danger transition-all hover:scale-[1.02] active:scale-[0.98] shadow-2xs"
+          title="Bersihkan log memori"
+        >
+          <AppIcon name="trash" class="w-3.5 h-3.5" />
+          <span class="hidden sm:inline">Bersihkan</span>
+        </button>
+      </div>
     </Teleport>
 
     <!-- Filter & Search Bar (Swiss Hairline Docked) -->
