@@ -23,6 +23,9 @@ export function createS3Router(
 
   // Middleware Auth SigV4
   router.onRequest(async ({ request, set }) => {
+    // 0. Allow CORS Preflight
+    if (request.method === "OPTIONS") return;
+
     // 1. Parse Credential
     const cred = parseSigV4(request);
     if (!cred) {

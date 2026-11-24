@@ -211,6 +211,15 @@
                   <AppIcon name="copy" class="w-3.5 h-3.5" />
                 </button>
 
+                <!-- Presigned URL Share -->
+                <button
+                  @click="openPresignModal(item.key)"
+                  title="Bagikan Tautan Sementara (Presigned URL)"
+                  class="p-1.5 text-xs font-medium border border-subtle rounded-md hover:bg-surface-raised text-secondary hover:text-primary transition-colors inline-flex items-center"
+                >
+                  <AppIcon name="external" class="w-3.5 h-3.5" />
+                </button>
+
                 <!-- Download -->
                 <a
                   :href="`/api/buckets/${bucketId}/download?key=${encodeURIComponent(item.key)}`"
@@ -372,6 +381,78 @@
         </div>
       </div>
     </div>
+
+    <!-- Modal Presigned URL Generator -->
+    <div
+      v-if="presignModalKey"
+      class="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4"
+      @click.self="presignModalKey = null"
+    >
+      <div class="bg-surface border border-subtle rounded-xl p-6 max-w-lg w-full shadow-lg space-y-4">
+        <div class="flex items-center justify-between pb-2 border-b border-subtle">
+          <h3 class="font-bold text-sm text-primary flex items-center gap-2">
+            <AppIcon name="external" class="w-4 h-4 text-brand" />
+            <span>Bagikan Tautan Sementara (S3 Presigned URL)</span>
+          </h3>
+          <button @click="presignModalKey = null" class="text-muted hover:text-primary text-lg">&times;</button>
+        </div>
+
+        <p class="text-xs text-secondary leading-relaxed">
+          Tautan langsung aman dengan otentikasi AWS SigV4 yang dapat diakses siapa saja tanpa perlu login ke panel hingga masa berlakunya habis.
+        </p>
+
+        <div class="space-y-3 font-mono text-xs">
+          <div>
+            <div class="text-[11px] text-muted mb-1">Objek:</div>
+            <div class="p-2 bg-canvas border border-subtle rounded text-primary truncate select-all">{{ presignModalKey }}</div>
+          </div>
+
+          <div>
+            <div class="text-[11px] text-muted mb-1">Masa Berlaku:</div>
+            <div class="grid grid-cols-3 gap-2">
+              <button
+                v-for="opt in presignExpiryOptions"
+                :key="opt.seconds"
+                @click="generatePresignedLink(opt.seconds)"
+                :class="[
+                  'py-1.5 px-2 rounded border text-center text-xs transition-all',
+                  selectedExpiry === opt.seconds
+                    ? 'bg-brand/10 border-brand text-brand font-bold'
+                    : 'bg-canvas border-subtle hover:bg-surface-raised text-secondary'
+                ]"
+              >
+                {{ opt.label }}
+              </button>
+            </div>
+          </div>
+
+          <div v-if="generatedPresignedUrl">
+            <div class="text-[11px] text-muted mb-1">Tautan URL:</div>
+            <div class="p-2.5 bg-neutral-950 text-neutral-200 border border-subtle rounded text-[11px] break-all select-all max-h-24 overflow-y-auto">
+              {{ generatedPresignedUrl }}
+            </div>
+            <div class="text-[10px] text-muted mt-1">Kedaluwarsa pada: {{ presignExpiresAt ? new Date(presignExpiresAt).toLocaleString() : '-' }}</div>
+          </div>
+        </div>
+
+        <div class="flex justify-end gap-2 pt-2 border-t border-subtle">
+          <button
+            @click="presignModalKey = null"
+            class="px-3 py-1.5 text-xs font-medium border border-subtle rounded-lg hover:bg-surface-raised text-secondary"
+          >
+            Tutup
+          </button>
+          <button
+            v-if="generatedPresignedUrl"
+            @click="copyPresignedUrl"
+            class="px-4 py-1.5 text-xs font-semibold bg-brand text-brand-contrast rounded-lg shadow-xs hover:opacity-90 flex items-center gap-1.5"
+          >
+            <AppIcon name="copy" class="w-3.5 h-3.5" />
+            <span>Salin Tautan</span>
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -397,6 +478,17 @@ const newFolderName = ref("");
 
 const previewItem = ref<any | null>(null);
 const previewContent = ref<string>("");
+
+const presignModalKey = ref<string | null>(null);
+const selectedExpiry = ref(3600);
+const generatedPresignedUrl = ref("");
+const presignExpiresAt = ref("");
+
+const presignExpiryOptions = [
+  { label: "1 Jam", seconds: 3600 },
+  { label: "24 Jam", seconds: 86400 },
+  { label: "7 Hari", seconds: 604800 },
+];
 
 // Breadcrumb calculation
 const breadcrumbs = computed(() => {
@@ -643,6 +735,44 @@ async function openPreview(item: any) {
       previewContent.value = "Gagal memuat pratinjau teks";
     }
   }
+}
+
+function openPresignModal(key: string) {
+  presignModalKey.value = key;
+  generatedPresignedUrl.value = "";
+  presignExpiresAt.value = "";
+  generatePresignedLink(3600);
+}
+
+async function generatePresignedLink(seconds: number) {
+  selectedExpiry.value = seconds;
+  if (!presignModalKey.value) return;
+  try {
+    const res = await fetch(`/api/buckets/${bucketId}/presign`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        key: presignModalKey.value,
+        expiresIn: seconds,
+        method: "GET",
+      }),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      generatedPresignedUrl.value = data.url;
+      presignExpiresAt.value = data.expiresAt;
+    } else {
+      toast.error("Gagal membuat tautan presigned");
+    }
+  } catch {
+    toast.error("Kesalahan jaringan");
+  }
+}
+
+function copyPresignedUrl() {
+  if (!generatedPresignedUrl.value) return;
+  navigator.clipboard.writeText(generatedPresignedUrl.value);
+  toast.success("Tautan presigned disalin ke clipboard!");
 }
 
 onMounted(() => {

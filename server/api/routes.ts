@@ -6,6 +6,7 @@ import type { TokenCipher } from "../core/crypto";
 import type { GoogleOAuth } from "../drive/oauth";
 import { DriveClient } from "../drive/client";
 import type { S3Engine } from "../s3/engine";
+import { generatePresignedUrl } from "../s3/sigv4";
 
 export function createApiRouter(
   db: AppDatabase,
@@ -394,6 +395,63 @@ export function createApiRouter(
     const key = query.key as string;
     await engine.deleteObject(bucket.name, key);
     return { success: true };
+  });
+
+  // Generate S3 Presigned URL (GET or PUT)
+  router.post("/buckets/:id/presign", async ({ params, body, set }) => {
+    const bucket = db.select().from(buckets).where(eq(buckets.id, params.id)).get();
+    if (!bucket) {
+      set.status = 404;
+      return { error: "Bucket tidak ditemukan" };
+    }
+    const { key, expiresIn = 3600, method = "GET" } = body as {
+      key?: string;
+      expiresIn?: number;
+      method?: string;
+    };
+    if (!key) {
+      set.status = 400;
+      return { error: "Parameter 'key' wajib diisi" };
+    }
+
+    let keyRow = db.select().from(s3AccessKeys).all()[0];
+    let secretKey = "";
+    if (keyRow) {
+      secretKey = await cipher.decrypt(keyRow.secretHash);
+    } else {
+      const rawKey = new Uint8Array(16);
+      const rawSecret = new Uint8Array(32);
+      crypto.getRandomValues(rawKey);
+      crypto.getRandomValues(rawSecret);
+      const accessKeyId = "G3" + Buffer.from(rawKey).toString("hex").toUpperCase();
+      secretKey = Buffer.from(rawSecret).toString("base64url");
+      const secretHash = await cipher.encrypt(secretKey);
+      keyRow = {
+        id: crypto.randomUUID(),
+        accessKeyId,
+        secretHash,
+        label: "Default Presign Key",
+        createdAt: new Date().toISOString(),
+      };
+      db.insert(s3AccessKeys).values(keyRow).run();
+    }
+
+    const host = process.env.G3_HOST || "localhost";
+    const s3Port = process.env.G3_S3_PORT || "9000";
+    const endpoint = `http://${host}:${s3Port}`;
+
+    const url = await generatePresignedUrl({
+      endpoint,
+      bucket: bucket.name,
+      key,
+      accessKeyId: keyRow.accessKeyId,
+      secretKey,
+      expiresInSeconds: Number(expiresIn),
+      method,
+    });
+
+    const expiresAt = new Date(Date.now() + Number(expiresIn) * 1000).toISOString();
+    return { success: true, url, expiresAt, expiresIn: Number(expiresIn) };
   });
 
   // 5. Access Keys (S3 Credentials)

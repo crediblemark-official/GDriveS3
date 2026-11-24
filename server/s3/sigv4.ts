@@ -152,3 +152,77 @@ function timingSafeEqual(a: string, b: string): boolean {
   }
   return out === 0;
 }
+
+export async function generatePresignedUrl({
+  endpoint,
+  bucket,
+  key,
+  accessKeyId,
+  secretKey,
+  expiresInSeconds = 3600,
+  method = "GET",
+  region = "us-east-1",
+}: {
+  endpoint: string;
+  bucket: string;
+  key: string;
+  accessKeyId: string;
+  secretKey: string;
+  expiresInSeconds?: number;
+  method?: string;
+  region?: string;
+}): Promise<string> {
+  const now = new Date();
+  const amzDate = now.toISOString().replace(/[:-]|\.\d{3}/g, "");
+  const dateStamp = amzDate.slice(0, 8);
+  const cleanEndpoint = endpoint.replace(/\/+$/, "");
+  const cleanKey = key.replace(/^\/+/, "");
+  const targetUrl = new URL(`${cleanEndpoint}/${bucket}/${cleanKey}`);
+
+  const scope = `${dateStamp}/${region}/s3/aws4_request`;
+
+  targetUrl.searchParams.set("X-Amz-Algorithm", "AWS4-HMAC-SHA256");
+  targetUrl.searchParams.set("X-Amz-Credential", `${accessKeyId}/${scope}`);
+  targetUrl.searchParams.set("X-Amz-Date", amzDate);
+  targetUrl.searchParams.set("X-Amz-Expires", String(expiresInSeconds));
+  targetUrl.searchParams.set("X-Amz-SignedHeaders", "host");
+
+  // Canonical Query String
+  const queryParams: [string, string][] = [];
+  for (const [k, v] of targetUrl.searchParams.entries()) {
+    queryParams.push([encodeURIComponent(k), encodeURIComponent(v)]);
+  }
+  queryParams.sort(([a], [b]) => a.localeCompare(b));
+  const canonicalQuery = queryParams.map(([k, v]) => `${k}=${v}`).join("&");
+
+  // Canonical Request
+  const canonicalHeaders = `host:${targetUrl.host}\n`;
+  const canonicalRequest = [
+    method.toUpperCase(),
+    targetUrl.pathname,
+    canonicalQuery,
+    canonicalHeaders,
+    "host",
+    "UNSIGNED-PAYLOAD",
+  ].join("\n");
+
+  const canonicalHash = new Bun.CryptoHasher("sha256")
+    .update(canonicalRequest)
+    .digest("hex");
+
+  const stringToSign = [
+    "AWS4-HMAC-SHA256",
+    amzDate,
+    scope,
+    canonicalHash,
+  ].join("\n");
+
+  const kDate = await hmacSHA256(`AWS4${secretKey}`, dateStamp);
+  const kRegion = await hmacSHA256(kDate, region);
+  const kService = await hmacSHA256(kRegion, "s3");
+  const kSigning = await hmacSHA256(kService, "aws4_request");
+  const signature = Buffer.from(await hmacSHA256(kSigning, stringToSign)).toString("hex");
+
+  targetUrl.searchParams.set("X-Amz-Signature", signature);
+  return targetUrl.toString();
+}
