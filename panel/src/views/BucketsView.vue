@@ -70,9 +70,9 @@
     <!-- Modal Create Bucket -->
     <div
       v-if="showCreateModal"
-      class="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4"
+      class="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4 max-sm:items-end max-sm:p-0"
     >
-      <div class="bg-surface border border-subtle rounded-xl p-6 max-w-sm w-full shadow-md space-y-4">
+      <div class="bg-surface border border-subtle rounded-xl p-6 max-w-sm w-full shadow-md space-y-4 max-sm:rounded-b-none max-sm:rounded-t-2xl max-sm:border-b-0 max-sm:p-5">
         <h2 class="font-bold text-base text-primary">Buat Bucket Baru</h2>
         <div class="space-y-1.5">
           <label class="text-xs font-semibold text-secondary">Nama Bucket (DNS Compliant)</label>

@@ -62,9 +62,9 @@
     <!-- Modal Secret Key Alert -->
     <div
       v-if="createdSecret"
-      class="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4"
+      class="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4 max-sm:items-end max-sm:p-0"
     >
-      <div class="bg-surface border border-subtle rounded-xl p-6 max-w-md w-full shadow-md space-y-4">
+      <div class="bg-surface border border-subtle rounded-xl p-6 max-w-md w-full shadow-md space-y-4 max-sm:rounded-b-none max-sm:rounded-t-2xl max-sm:border-b-0 max-sm:p-5">
         <div class="flex items-center gap-2 text-success">
           <AppIcon name="check" class="w-5 h-5" />
           <h2 class="font-bold text-base text-primary">Access Key Berhasil Dibuat</h2>
@@ -100,9 +100,9 @@
     <!-- Modal Create Key -->
     <div
       v-if="showCreateModal"
-      class="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4"
+      class="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4 max-sm:items-end max-sm:p-0"
     >
-      <div class="bg-surface border border-subtle rounded-xl p-6 max-w-sm w-full shadow-md space-y-4">
+      <div class="bg-surface border border-subtle rounded-xl p-6 max-w-sm w-full shadow-md space-y-4 max-sm:rounded-b-none max-sm:rounded-t-2xl max-sm:border-b-0 max-sm:p-5">
         <h2 class="font-bold text-base text-primary">Buat S3 Access Key</h2>
         <div class="space-y-1.5">
           <label class="text-xs font-semibold text-secondary">Label / Nama Perangkat</label>

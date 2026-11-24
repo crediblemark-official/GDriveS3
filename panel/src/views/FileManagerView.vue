@@ -400,15 +400,87 @@ async function loadData() {
 
 async function uploadFileObject(file: File) {
   const fullKey = `${currentPrefix.value}${file.name}`;
-  const res = await fetch(`/api/buckets/${bucketId}/upload?key=${encodeURIComponent(fullKey)}`, {
+  const CHUNK_SIZE = 10 * 1024 * 1024; // 10MB chunk threshold
+
+  // Small files (<= 10MB): Direct streaming
+  if (file.size <= CHUNK_SIZE) {
+    const res = await fetch(`/api/buckets/${bucketId}/upload?key=${encodeURIComponent(fullKey)}`, {
+      method: "POST",
+      headers: { "Content-Type": file.type || "application/octet-stream" },
+      body: file,
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || `Gagal mengunggah ${file.name}`);
+    }
+    return;
+  }
+
+  // Large files (> 10MB): Chunked S3 Multipart Upload with progress
+  const totalParts = Math.ceil(file.size / CHUNK_SIZE);
+  toast.info(`Mengunggah ${file.name} (${formatBytes(file.size)}) dalam ${totalParts} pecahan...`);
+
+  // 1. Initiate Multipart
+  const initRes = await fetch(`/api/buckets/${bucketId}/multipart/initiate`, {
     method: "POST",
-    headers: { "Content-Type": file.type || "application/octet-stream" },
-    body: file,
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      key: fullKey,
+      contentType: file.type || "application/octet-stream",
+    }),
   });
 
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.error || `Gagal mengunggah ${file.name}`);
+  if (!initRes.ok) {
+    const err = await initRes.json().catch(() => ({}));
+    throw new Error(err.error || "Gagal menginisialisasi multipart upload");
+  }
+
+  const { uploadId } = await initRes.json();
+
+  // 2. Upload Chunks
+  try {
+    for (let partNum = 1; partNum <= totalParts; partNum++) {
+      const start = (partNum - 1) * CHUNK_SIZE;
+      const end = Math.min(start + CHUNK_SIZE, file.size);
+      const chunk = file.slice(start, end);
+
+      const partRes = await fetch(
+        `/api/buckets/${bucketId}/multipart/part?uploadId=${uploadId}&partNumber=${partNum}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/octet-stream" },
+          body: chunk,
+        }
+      );
+
+      if (!partRes.ok) {
+        throw new Error(`Gagal mengunggah part ${partNum}/${totalParts}`);
+      }
+
+      const percent = Math.round((partNum / totalParts) * 100);
+      toast.info(`Progress ${file.name}: ${percent}% (${partNum}/${totalParts})`);
+    }
+
+    // 3. Complete Multipart
+    const compRes = await fetch(`/api/buckets/${bucketId}/multipart/complete`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ key: fullKey, uploadId }),
+    });
+
+    if (!compRes.ok) {
+      const err = await compRes.json().catch(() => ({}));
+      throw new Error(err.error || "Gagal menyelesaikan multipart upload");
+    }
+  } catch (err) {
+    // Abort if failed
+    await fetch(`/api/buckets/${bucketId}/multipart/abort`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ uploadId }),
+    }).catch(() => {});
+    throw err;
   }
 }
 

@@ -1,9 +1,9 @@
 <template>
   <div
-    class="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4"
+    class="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 max-sm:items-end max-sm:p-0"
     @click.self="$emit('close')"
   >
-    <div class="bg-surface border border-subtle rounded-xl p-6 max-w-lg w-full shadow-lg space-y-4">
+    <div class="bg-surface border border-subtle rounded-xl p-6 max-w-lg w-full shadow-lg space-y-4 max-sm:rounded-b-none max-sm:rounded-t-2xl max-sm:border-b-0 max-sm:p-5">
       <div class="flex items-center justify-between pb-2 border-b border-subtle">
         <h3 class="font-bold text-sm text-primary flex items-center gap-2">
           <AppIcon name="external" class="w-4 h-4 text-brand" />

@@ -1,9 +1,9 @@
 <template>
   <div
-    class="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4"
+    class="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 max-sm:items-end max-sm:p-0"
     @click.self="$emit('close')"
   >
-    <div class="bg-surface border border-subtle rounded-xl max-w-2xl w-full max-h-[85vh] flex flex-col shadow-xl overflow-hidden">
+    <div class="bg-surface border border-subtle rounded-xl max-w-2xl w-full max-h-[85vh] flex flex-col shadow-xl overflow-hidden max-sm:rounded-b-none max-sm:rounded-t-2xl max-sm:border-b-0">
       <!-- Preview Header -->
       <div class="p-4 border-b border-subtle flex items-center justify-between">
         <div>

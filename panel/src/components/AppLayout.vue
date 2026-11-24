@@ -33,7 +33,20 @@
       </nav>
 
       <!-- Bottom Profile / Info -->
-      <div class="p-3 border-t border-subtle">
+      <div class="p-3 border-t border-subtle space-y-2">
+        <button
+          @click="toggle"
+          class="w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs font-medium text-secondary hover:text-primary hover:bg-surface-raised transition-colors"
+        >
+          <div class="flex items-center gap-2">
+            <AppIcon :name="isDark ? 'moon' : 'sun'" class="w-4 h-4 text-muted" />
+            <span>{{ isDark ? 'Mode Gelap' : 'Mode Terang' }}</span>
+          </div>
+          <span class="text-[10px] font-mono text-muted px-1.5 py-0.5 rounded bg-canvas border border-subtle">
+            {{ isDark ? 'Dark' : 'Light' }}
+          </span>
+        </button>
+
         <div class="p-2 rounded-lg bg-surface-raised/60 border border-subtle flex items-center justify-between">
           <div class="flex items-center gap-2 overflow-hidden">
             <div class="w-6 h-6 rounded-full bg-brand/10 flex items-center justify-center text-xs font-mono font-semibold text-primary shrink-0">
@@ -62,12 +75,21 @@
           </div>
           <span class="font-semibold text-sm">G3 Storage</span>
         </div>
-        <button
-          @click="showMobileMenu = !showMobileMenu"
-          class="p-1.5 rounded-lg border border-subtle text-secondary hover:text-primary"
-        >
-          <AppIcon name="menu" class="w-5 h-5" />
-        </button>
+        <div class="flex items-center gap-1.5">
+          <button
+            @click="toggle"
+            class="p-1.5 rounded-lg border border-subtle text-secondary hover:text-primary"
+            :title="isDark ? 'Mode Terang' : 'Mode Gelap'"
+          >
+            <AppIcon :name="isDark ? 'moon' : 'sun'" class="w-4 h-4" />
+          </button>
+          <button
+            @click="showMobileMenu = !showMobileMenu"
+            class="p-1.5 rounded-lg border border-subtle text-secondary hover:text-primary"
+          >
+            <AppIcon name="menu" class="w-5 h-5" />
+          </button>
+        </div>
       </header>
 
       <!-- View Container -->
@@ -109,14 +131,20 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from "vue";
+import { ref, onMounted } from "vue";
 import { useRouter } from "vue-router";
 import AppIcon from "./AppIcon.vue";
 import AppToast from "./AppToast.vue";
 import BottomSheet from "./BottomSheet.vue";
+import { useTheme } from "../composables/useTheme";
 
 const router = useRouter();
+const { isDark, toggle, initTheme } = useTheme();
 const showMobileMenu = ref(false);
+
+onMounted(() => {
+  initTheme();
+});
 
 const navItems = [
   { label: "Ringkasan", path: "/dashboard", icon: "dashboard" },

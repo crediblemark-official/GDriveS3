@@ -102,6 +102,70 @@ export function createBucketsRoutes(
     return res;
   });
 
+  // Browser Multipart Upload: Initiate
+  router.post("/buckets/:id/multipart/initiate", async ({ params, body, set }) => {
+    const bucket = db.select().from(buckets).where(eq(buckets.id, params.id)).get();
+    if (!bucket) {
+      set.status = 404;
+      return { error: "Bucket tidak ditemukan" };
+    }
+    const { key, contentType = "application/octet-stream" } = body as { key?: string; contentType?: string };
+    if (!key) {
+      set.status = 400;
+      return { error: "Parameter 'key' wajib diisi" };
+    }
+    const uploadId = await engine.initiateMultipart(bucket.name, key, contentType, "{}");
+    return { uploadId };
+  });
+
+  // Browser Multipart Upload: Upload Part
+  router.post("/buckets/:id/multipart/part", async ({ params, query, request, set }) => {
+    const bucket = db.select().from(buckets).where(eq(buckets.id, params.id)).get();
+    if (!bucket) {
+      set.status = 404;
+      return { error: "Bucket tidak ditemukan" };
+    }
+    const { uploadId, partNumber } = query as { uploadId?: string; partNumber?: string };
+    if (!uploadId || !partNumber || !request.body) {
+      set.status = 400;
+      return { error: "Missing uploadId, partNumber, or body" };
+    }
+    const res = await engine.uploadPart(uploadId, Number(partNumber), request.body);
+    return res;
+  });
+
+  // Browser Multipart Upload: Complete
+  router.post("/buckets/:id/multipart/complete", async ({ params, body, set }) => {
+    const bucket = db.select().from(buckets).where(eq(buckets.id, params.id)).get();
+    if (!bucket) {
+      set.status = 404;
+      return { error: "Bucket tidak ditemukan" };
+    }
+    const { key, uploadId } = body as { key?: string; uploadId?: string };
+    if (!key || !uploadId) {
+      set.status = 400;
+      return { error: "Missing key or uploadId" };
+    }
+    const res = await engine.completeMultipart(bucket.name, key, uploadId);
+    return res;
+  });
+
+  // Browser Multipart Upload: Abort
+  router.post("/buckets/:id/multipart/abort", async ({ params, body, set }) => {
+    const bucket = db.select().from(buckets).where(eq(buckets.id, params.id)).get();
+    if (!bucket) {
+      set.status = 404;
+      return { error: "Bucket tidak ditemukan" };
+    }
+    const { uploadId } = body as { uploadId?: string };
+    if (!uploadId) {
+      set.status = 400;
+      return { error: "Missing uploadId" };
+    }
+    await engine.abortMultipart(uploadId);
+    return { success: true };
+  });
+
   // Create Virtual Directory Marker
   router.post("/buckets/:id/folder", async ({ params, body, set }) => {
     const bucket = db.select().from(buckets).where(eq(buckets.id, params.id)).get();
