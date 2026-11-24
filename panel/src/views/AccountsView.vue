@@ -72,6 +72,48 @@
         Belum ada akun Google Drive yang ditautkan. Klik tombol "Tautkan Akun Google" di atas untuk menambahkan kuota.
       </div>
     </div>
+
+    <!-- Modal Petunjuk Setup Google OAuth -->
+    <div
+      v-if="showOauthHelp"
+      class="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4"
+    >
+      <div class="bg-surface border border-subtle rounded-xl p-6 max-w-lg w-full shadow-md space-y-4">
+        <div class="flex items-center gap-2.5 text-warning">
+          <AppIcon name="alert-triangle" class="w-5 h-5" />
+          <h2 class="font-bold text-base text-primary">Google OAuth Belum Dikonfigurasi</h2>
+        </div>
+
+        <p class="text-xs text-secondary leading-relaxed">
+          G3 memerlukan <strong>Google OAuth 2.0 Client Credentials</strong> agar dapat mengakses Google Drive API atas izin akun Anda.
+        </p>
+
+        <div class="space-y-2 bg-canvas p-3.5 rounded-lg border border-subtle text-xs font-mono">
+          <div class="text-muted text-[11px] font-bold uppercase">Langkah Konfigurasi di .env:</div>
+          <ol class="list-decimal list-inside space-y-1 text-primary">
+            <li>Buka <a href="https://console.cloud.google.com" target="_blank" class="text-studio underline">Google Cloud Console</a>.</li>
+            <li>Aktifkan <strong>Google Drive API</strong>.</li>
+            <li>Buat OAuth Client ID (Web App) dengan Redirect URI:</li>
+            <li class="p-1.5 bg-surface-raised border border-subtle rounded text-[11px] select-all break-all">http://localhost:8787/api/accounts/callback</li>
+            <li>Salin kredensial ke file <strong>.env</strong> di root folder:</li>
+          </ol>
+          <div class="p-2 bg-neutral-900 text-neutral-100 rounded text-[11px] select-all">
+            G3_GOOGLE_CLIENT_ID="xxx.apps.googleusercontent.com"<br/>
+            G3_GOOGLE_CLIENT_SECRET="GOCSPX-xxx"<br/>
+            G3_GOOGLE_REDIRECT_URI="http://localhost:8787/api/accounts/callback"
+          </div>
+        </div>
+
+        <div class="flex justify-end pt-2">
+          <button
+            @click="showOauthHelp = false"
+            class="px-4 py-1.5 text-xs font-semibold bg-brand text-brand-contrast rounded-lg shadow-xs hover:opacity-90"
+          >
+            Mengerti
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -82,6 +124,7 @@ import { useToast } from "../composables/useToast";
 
 const toast = useToast();
 const accounts = ref<any[]>([]);
+const showOauthHelp = ref(false);
 
 function formatBytes(bytes: number) {
   if (!bytes || bytes === 0) return "0 B";
@@ -107,7 +150,8 @@ async function connectAccount() {
     const data = await res.json();
     window.location.href = data.url;
   } else {
-    const err = await res.json();
+    const err = await res.json().catch(() => ({}));
+    showOauthHelp.value = true;
     toast.error(err.error || "Gagal menghubungkan Google Drive");
   }
 }
