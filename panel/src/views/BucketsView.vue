@@ -108,19 +108,12 @@
 import { ref, onMounted } from "vue";
 import AppIcon from "../components/AppIcon.vue";
 import { useToast } from "../composables/useToast";
+import { formatBytes } from "../lib/format";
 
 const toast = useToast();
 const buckets = ref<any[]>([]);
 const showCreateModal = ref(false);
 const newBucketName = ref("");
-
-function formatBytes(bytes: number) {
-  if (!bytes || bytes === 0) return "0 B";
-  const k = 1024;
-  const sizes = ["B", "KB", "MB", "GB", "TB"];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`;
-}
 
 async function loadBuckets() {
   const res = await fetch("/api/buckets");

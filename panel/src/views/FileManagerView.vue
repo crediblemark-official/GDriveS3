@@ -117,29 +117,17 @@
         <!-- Anti-CLS Skeleton Loading State -->
         <tbody v-if="loading" class="divide-y divide-subtle">
           <tr v-for="n in 5" :key="n" class="animate-pulse">
-            <td class="py-3 px-4">
-              <div class="h-4 bg-surface-raised rounded w-48"></div>
-            </td>
-            <td class="py-3 px-4">
-              <div class="h-4 bg-surface-raised rounded w-24"></div>
-            </td>
-            <td class="py-3 px-4">
-              <div class="h-4 bg-surface-raised rounded w-16"></div>
-            </td>
-            <td class="py-3 px-4">
-              <div class="h-4 bg-surface-raised rounded w-20"></div>
-            </td>
-            <td class="py-3 px-4">
-              <div class="h-4 bg-surface-raised rounded w-28"></div>
-            </td>
-            <td class="py-3 px-4 text-right">
-              <div class="h-4 bg-surface-raised rounded w-16 ml-auto"></div>
-            </td>
+            <td class="py-3 px-4"><div class="h-4 bg-surface-raised rounded w-48"></div></td>
+            <td class="py-3 px-4"><div class="h-4 bg-surface-raised rounded w-24"></div></td>
+            <td class="py-3 px-4"><div class="h-4 bg-surface-raised rounded w-16"></div></td>
+            <td class="py-3 px-4"><div class="h-4 bg-surface-raised rounded w-20"></div></td>
+            <td class="py-3 px-4"><div class="h-4 bg-surface-raised rounded w-28"></div></td>
+            <td class="py-3 px-4 text-right"><div class="h-4 bg-surface-raised rounded w-16 ml-auto"></div></td>
           </tr>
         </tbody>
 
         <tbody v-else class="divide-y divide-subtle">
-          <!-- Back to Parent Row (if in subfolder) -->
+          <!-- Back to Parent Row -->
           <tr
             v-if="currentPrefix"
             @click="navigateUp"
@@ -158,9 +146,7 @@
             :key="item.key"
             class="hover:bg-surface-raised/40 transition-colors"
           >
-            <!-- Name with appropriate icon -->
             <td class="py-3 px-4 font-mono font-medium text-primary">
-              <!-- Folder item -->
               <button
                 v-if="item.isFolder"
                 @click="navigateToPrefix(item.folderPrefix)"
@@ -170,7 +156,6 @@
                 <span>{{ item.displayName }}/</span>
               </button>
 
-              <!-- File item -->
               <div v-else class="flex items-center gap-2">
                 <AppIcon name="file" class="w-4 h-4 text-muted shrink-0" />
                 <span class="truncate max-w-[280px]" :title="item.key">{{ item.displayName }}</span>
@@ -193,16 +178,14 @@
             <!-- Actions -->
             <td class="py-3 px-4 text-right space-x-1.5 whitespace-nowrap">
               <template v-if="!item.isFolder">
-                <!-- Preview Button -->
                 <button
-                  @click="openPreview(item)"
+                  @click="previewItem = item"
                   title="Lihat Pratinjau"
                   class="p-1.5 text-xs font-medium border border-subtle rounded-md hover:bg-surface-raised text-secondary hover:text-primary transition-colors inline-flex items-center"
                 >
                   <AppIcon name="eye" class="w-3.5 h-3.5" />
                 </button>
 
-                <!-- Copy S3 URI -->
                 <button
                   @click="copyS3Uri(item.key)"
                   title="Salin S3 URI (s3://bucket/key)"
@@ -211,16 +194,14 @@
                   <AppIcon name="copy" class="w-3.5 h-3.5" />
                 </button>
 
-                <!-- Presigned URL Share -->
                 <button
-                  @click="openPresignModal(item.key)"
+                  @click="presignKey = item.key"
                   title="Bagikan Tautan Sementara (Presigned URL)"
                   class="p-1.5 text-xs font-medium border border-subtle rounded-md hover:bg-surface-raised text-secondary hover:text-primary transition-colors inline-flex items-center"
                 >
                   <AppIcon name="external" class="w-3.5 h-3.5" />
                 </button>
 
-                <!-- Download -->
                 <a
                   :href="`/api/buckets/${bucketId}/download?key=${encodeURIComponent(item.key)}`"
                   target="_blank"
@@ -230,7 +211,6 @@
                   <AppIcon name="download" class="w-3.5 h-3.5" />
                 </a>
 
-                <!-- Delete -->
                 <button
                   @click="deleteObject(item.key)"
                   title="Hapus Objek"
@@ -240,7 +220,6 @@
                 </button>
               </template>
 
-              <!-- Folder Actions -->
               <template v-else>
                 <button
                   @click="deleteFolder(item.folderPrefix)"
@@ -265,194 +244,30 @@
       </table>
     </div>
 
-    <!-- Modal Create Folder -->
-    <div
+    <!-- Modular Modals -->
+    <CreateFolderModal
       v-if="showCreateFolderModal"
-      class="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4"
-    >
-      <div class="bg-surface border border-subtle rounded-xl p-6 max-w-sm w-full shadow-md space-y-4">
-        <h2 class="font-bold text-base text-primary">Buat Folder Baru</h2>
-        <div class="space-y-1.5">
-          <label class="text-xs font-semibold text-secondary">Nama Folder</label>
-          <div class="flex items-center">
-            <span v-if="currentPrefix" class="text-xs font-mono text-muted mr-1">/{{ currentPrefix }}</span>
-            <input
-              v-model="newFolderName"
-              @keyup.enter="createFolder"
-              type="text"
-              placeholder="dokumen-2026"
-              class="w-full px-3 py-2 text-sm bg-canvas border border-subtle rounded-lg font-mono text-primary focus:outline-none focus:border-border-strong"
-            />
-          </div>
-          <p class="text-[11px] text-muted">Folder akan dibuat sebagai penanda prefix S3.</p>
-        </div>
+      :bucket-id="bucketId"
+      :current-prefix="currentPrefix"
+      @close="showCreateFolderModal = false"
+      @created="loadData"
+    />
 
-        <div class="flex justify-end gap-2 pt-2">
-          <button
-            @click="showCreateFolderModal = false"
-            class="px-3 py-1.5 text-xs font-medium border border-subtle rounded-lg hover:bg-surface-raised text-secondary"
-          >
-            Batal
-          </button>
-          <button
-            @click="createFolder"
-            class="px-4 py-1.5 text-xs font-semibold bg-brand text-brand-contrast rounded-lg shadow-xs hover:opacity-90"
-          >
-            Buat Folder
-          </button>
-        </div>
-      </div>
-    </div>
-
-    <!-- Modal File Preview -->
-    <div
+    <FilePreviewModal
       v-if="previewItem"
-      class="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4"
-      @click.self="previewItem = null"
-    >
-      <div class="bg-surface border border-subtle rounded-xl max-w-2xl w-full max-h-[85vh] flex flex-col shadow-xl overflow-hidden">
-        <!-- Preview Header -->
-        <div class="p-4 border-b border-subtle flex items-center justify-between">
-          <div>
-            <h3 class="font-bold text-sm text-primary font-mono truncate max-w-md">{{ previewItem.displayName }}</h3>
-            <p class="text-[11px] text-muted font-mono">{{ formatBytes(previewItem.size) }} &bull; {{ previewItem.contentType }}</p>
-          </div>
-          <button
-            @click="previewItem = null"
-            class="p-1 rounded-md text-muted hover:text-primary hover:bg-surface-raised text-lg leading-none"
-          >
-            &times;
-          </button>
-        </div>
+      :item="previewItem"
+      :bucket-id="bucketId"
+      :bucket-name="bucketName"
+      @close="previewItem = null"
+      @copy-uri="copyS3Uri"
+    />
 
-        <!-- Preview Body -->
-        <div class="p-4 flex-1 overflow-auto flex items-center justify-center bg-canvas">
-          <!-- Image preview -->
-          <img
-            v-if="previewItem.contentType.startsWith('image/')"
-            :src="`/api/buckets/${bucketId}/download?key=${encodeURIComponent(previewItem.key)}`"
-            class="max-w-full max-h-[60vh] object-contain rounded-lg border border-subtle shadow-xs"
-            alt="Preview"
-          />
-
-          <!-- Text / Code preview -->
-          <div
-            v-else-if="previewItem.contentType.startsWith('text/') || previewItem.contentType.includes('json') || previewItem.contentType.includes('javascript') || previewItem.contentType.includes('xml')"
-            class="w-full text-xs font-mono p-3 bg-neutral-950 text-neutral-200 rounded-lg overflow-auto max-h-[50vh] whitespace-pre-wrap select-all"
-          >
-            {{ previewContent || "Memuat konten..." }}
-          </div>
-
-          <!-- Generic preview fallback -->
-          <div v-else class="text-center py-8 space-y-3">
-            <AppIcon name="file" class="w-12 h-12 text-muted mx-auto" />
-            <div class="text-xs text-muted">Pratinjau langsung tidak tersedia untuk format biner ini.</div>
-            <a
-              :href="`/api/buckets/${bucketId}/download?key=${encodeURIComponent(previewItem.key)}`"
-              target="_blank"
-              class="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-brand text-brand-contrast text-xs font-semibold rounded-lg shadow-xs hover:opacity-90"
-            >
-              <AppIcon name="download" class="w-4 h-4" />
-              <span>Unduh File</span>
-            </a>
-          </div>
-        </div>
-
-        <!-- Preview Footer -->
-        <div class="p-3 border-t border-subtle bg-surface flex items-center justify-between text-xs font-mono">
-          <span class="text-muted truncate max-w-xs select-all">s3://{{ bucketName }}/{{ previewItem.key }}</span>
-          <div class="flex items-center gap-2">
-            <button
-              @click="copyS3Uri(previewItem.key)"
-              class="px-2.5 py-1 text-xs border border-subtle rounded-md hover:bg-surface-raised text-primary inline-flex items-center gap-1"
-            >
-              <AppIcon name="copy" class="w-3.5 h-3.5" />
-              <span>Salin URI</span>
-            </button>
-            <a
-              :href="`/api/buckets/${bucketId}/download?key=${encodeURIComponent(previewItem.key)}`"
-              target="_blank"
-              class="px-2.5 py-1 text-xs bg-brand text-brand-contrast rounded-md font-semibold hover:opacity-90 inline-flex items-center gap-1"
-            >
-              <AppIcon name="download" class="w-3.5 h-3.5" />
-              <span>Unduh</span>
-            </a>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Modal Presigned URL Generator -->
-    <div
-      v-if="presignModalKey"
-      class="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4"
-      @click.self="presignModalKey = null"
-    >
-      <div class="bg-surface border border-subtle rounded-xl p-6 max-w-lg w-full shadow-lg space-y-4">
-        <div class="flex items-center justify-between pb-2 border-b border-subtle">
-          <h3 class="font-bold text-sm text-primary flex items-center gap-2">
-            <AppIcon name="external" class="w-4 h-4 text-brand" />
-            <span>Bagikan Tautan Sementara (S3 Presigned URL)</span>
-          </h3>
-          <button @click="presignModalKey = null" class="text-muted hover:text-primary text-lg">&times;</button>
-        </div>
-
-        <p class="text-xs text-secondary leading-relaxed">
-          Tautan langsung aman dengan otentikasi AWS SigV4 yang dapat diakses siapa saja tanpa perlu login ke panel hingga masa berlakunya habis.
-        </p>
-
-        <div class="space-y-3 font-mono text-xs">
-          <div>
-            <div class="text-[11px] text-muted mb-1">Objek:</div>
-            <div class="p-2 bg-canvas border border-subtle rounded text-primary truncate select-all">{{ presignModalKey }}</div>
-          </div>
-
-          <div>
-            <div class="text-[11px] text-muted mb-1">Masa Berlaku:</div>
-            <div class="grid grid-cols-3 gap-2">
-              <button
-                v-for="opt in presignExpiryOptions"
-                :key="opt.seconds"
-                @click="generatePresignedLink(opt.seconds)"
-                :class="[
-                  'py-1.5 px-2 rounded border text-center text-xs transition-all',
-                  selectedExpiry === opt.seconds
-                    ? 'bg-brand/10 border-brand text-brand font-bold'
-                    : 'bg-canvas border-subtle hover:bg-surface-raised text-secondary'
-                ]"
-              >
-                {{ opt.label }}
-              </button>
-            </div>
-          </div>
-
-          <div v-if="generatedPresignedUrl">
-            <div class="text-[11px] text-muted mb-1">Tautan URL:</div>
-            <div class="p-2.5 bg-neutral-950 text-neutral-200 border border-subtle rounded text-[11px] break-all select-all max-h-24 overflow-y-auto">
-              {{ generatedPresignedUrl }}
-            </div>
-            <div class="text-[10px] text-muted mt-1">Kedaluwarsa pada: {{ presignExpiresAt ? new Date(presignExpiresAt).toLocaleString() : '-' }}</div>
-          </div>
-        </div>
-
-        <div class="flex justify-end gap-2 pt-2 border-t border-subtle">
-          <button
-            @click="presignModalKey = null"
-            class="px-3 py-1.5 text-xs font-medium border border-subtle rounded-lg hover:bg-surface-raised text-secondary"
-          >
-            Tutup
-          </button>
-          <button
-            v-if="generatedPresignedUrl"
-            @click="copyPresignedUrl"
-            class="px-4 py-1.5 text-xs font-semibold bg-brand text-brand-contrast rounded-lg shadow-xs hover:opacity-90 flex items-center gap-1.5"
-          >
-            <AppIcon name="copy" class="w-3.5 h-3.5" />
-            <span>Salin Tautan</span>
-          </button>
-        </div>
-      </div>
-    </div>
+    <PresignModal
+      v-if="presignKey"
+      :object-key="presignKey"
+      :bucket-id="bucketId"
+      @close="presignKey = null"
+    />
   </div>
 </template>
 
@@ -460,7 +275,11 @@
 import { ref, computed, onMounted } from "vue";
 import { useRoute } from "vue-router";
 import AppIcon from "../components/AppIcon.vue";
+import CreateFolderModal from "../components/CreateFolderModal.vue";
+import FilePreviewModal from "../components/FilePreviewModal.vue";
+import PresignModal from "../components/PresignModal.vue";
 import { useToast } from "../composables/useToast";
+import { formatBytes } from "../lib/format";
 
 const route = useRoute();
 const toast = useToast();
@@ -473,24 +292,11 @@ const searchQuery = ref("");
 const loading = ref(true);
 const uploading = ref(false);
 const isDragging = ref(false);
+
 const showCreateFolderModal = ref(false);
-const newFolderName = ref("");
-
 const previewItem = ref<any | null>(null);
-const previewContent = ref<string>("");
+const presignKey = ref<string | null>(null);
 
-const presignModalKey = ref<string | null>(null);
-const selectedExpiry = ref(3600);
-const generatedPresignedUrl = ref("");
-const presignExpiresAt = ref("");
-
-const presignExpiryOptions = [
-  { label: "1 Jam", seconds: 3600 },
-  { label: "24 Jam", seconds: 86400 },
-  { label: "7 Hari", seconds: 604800 },
-];
-
-// Breadcrumb calculation
 const breadcrumbs = computed(() => {
   if (!currentPrefix.value) return [];
   const parts = currentPrefix.value.replace(/\/$/, "").split("/");
@@ -503,12 +309,10 @@ const breadcrumbs = computed(() => {
   return crumbs;
 });
 
-// Virtual directory grouping based on currentPrefix
 const filteredItems = computed(() => {
   const query = searchQuery.value.trim().toLowerCase();
   const prefix = currentPrefix.value;
 
-  // If user searched across bucket, return flat matching objects
   if (query) {
     return rawObjects.value
       .filter((o) => o.key.toLowerCase().includes(query))
@@ -526,11 +330,10 @@ const filteredItems = computed(() => {
   for (const obj of rawObjects.value) {
     if (!obj.key.startsWith(prefix)) continue;
     const remaining = obj.key.slice(prefix.length);
-    if (!remaining) continue; // exact prefix match
+    if (!remaining) continue;
 
     const slashIdx = remaining.indexOf("/");
     if (slashIdx >= 0) {
-      // It belongs to a subfolder
       const folderName = remaining.slice(0, slashIdx);
       const subPrefix = `${prefix}${folderName}/`;
       if (!foldersMap.has(subPrefix)) {
@@ -546,7 +349,6 @@ const filteredItems = computed(() => {
         });
       }
     } else {
-      // It's a file in the current directory
       files.push({
         ...obj,
         displayName: remaining,
@@ -563,14 +365,6 @@ const filteredItems = computed(() => {
   return [...folderList, ...fileList];
 });
 
-function formatBytes(bytes: number) {
-  if (!bytes || bytes === 0) return "0 B";
-  const k = 1024;
-  const sizes = ["B", "KB", "MB", "GB", "TB"];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`;
-}
-
 function navigateToPrefix(prefix: string) {
   currentPrefix.value = prefix;
   searchQuery.value = "";
@@ -580,11 +374,7 @@ function navigateUp() {
   if (!currentPrefix.value) return;
   const trimmed = currentPrefix.value.replace(/\/$/, "");
   const lastSlash = trimmed.lastIndexOf("/");
-  if (lastSlash >= 0) {
-    currentPrefix.value = trimmed.slice(0, lastSlash + 1);
-  } else {
-    currentPrefix.value = "";
-  }
+  currentPrefix.value = lastSlash >= 0 ? trimmed.slice(0, lastSlash + 1) : "";
 }
 
 async function loadData() {
@@ -601,7 +391,7 @@ async function loadData() {
     if (oRes.ok) {
       rawObjects.value = await oRes.json();
     }
-  } catch (err: any) {
+  } catch {
     toast.error("Gagal memuat data objek");
   } finally {
     loading.value = false;
@@ -625,16 +415,14 @@ async function uploadFileObject(file: File) {
 async function handleFileInput(event: Event) {
   const input = event.target as HTMLInputElement;
   if (!input.files || input.files.length === 0) return;
-  const files = Array.from(input.files);
-  await uploadFiles(files);
+  await uploadFiles(Array.from(input.files));
   input.value = "";
 }
 
 async function handleDrop(event: DragEvent) {
   isDragging.value = false;
   if (!event.dataTransfer?.files || event.dataTransfer.files.length === 0) return;
-  const files = Array.from(event.dataTransfer.files);
-  await uploadFiles(files);
+  await uploadFiles(Array.from(event.dataTransfer.files));
 }
 
 async function uploadFiles(files: File[]) {
@@ -658,32 +446,6 @@ async function uploadFiles(files: File[]) {
   uploading.value = false;
 }
 
-async function createFolder() {
-  if (!newFolderName.value.trim()) return;
-  try {
-    const res = await fetch(`/api/buckets/${bucketId}/folder`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        folderName: newFolderName.value.trim(),
-        prefix: currentPrefix.value,
-      }),
-    });
-
-    if (res.ok) {
-      toast.success(`Folder '${newFolderName.value}' berhasil dibuat`);
-      showCreateFolderModal.value = false;
-      newFolderName.value = "";
-      await loadData();
-    } else {
-      const err = await res.json();
-      toast.error(err.error || "Gagal membuat folder");
-    }
-  } catch (err: any) {
-    toast.error("Terjadi kesalahan jaringan");
-  }
-}
-
 async function deleteObject(key: string) {
   if (!confirm(`Hapus file '${key}' dari Google Drive?`)) return;
   const res = await fetch(`/api/buckets/${bucketId}/objects?key=${encodeURIComponent(key)}`, {
@@ -698,7 +460,6 @@ async function deleteObject(key: string) {
 }
 
 async function deleteFolder(folderPrefix: string) {
-  // Check if any objects exist inside this folder
   const inside = rawObjects.value.filter((o) => o.key.startsWith(folderPrefix) && o.key !== folderPrefix);
   if (inside.length > 0) {
     if (!confirm(`Folder ini berisi ${inside.length} item. Hapus semua file di dalam '${folderPrefix}'?`)) return;
@@ -715,64 +476,6 @@ function copyS3Uri(key: string) {
   const uri = `s3://${bucketName.value}/${key}`;
   navigator.clipboard.writeText(uri);
   toast.success(`Disalin: ${uri}`);
-}
-
-async function openPreview(item: any) {
-  previewItem.value = item;
-  previewContent.value = "";
-
-  const isText =
-    item.contentType.startsWith("text/") ||
-    item.contentType.includes("json") ||
-    item.contentType.includes("javascript") ||
-    item.contentType.includes("xml");
-
-  if (isText && item.size < 500000) {
-    try {
-      const res = await fetch(`/api/buckets/${bucketId}/download?key=${encodeURIComponent(item.key)}`);
-      previewContent.value = await res.text();
-    } catch {
-      previewContent.value = "Gagal memuat pratinjau teks";
-    }
-  }
-}
-
-function openPresignModal(key: string) {
-  presignModalKey.value = key;
-  generatedPresignedUrl.value = "";
-  presignExpiresAt.value = "";
-  generatePresignedLink(3600);
-}
-
-async function generatePresignedLink(seconds: number) {
-  selectedExpiry.value = seconds;
-  if (!presignModalKey.value) return;
-  try {
-    const res = await fetch(`/api/buckets/${bucketId}/presign`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        key: presignModalKey.value,
-        expiresIn: seconds,
-        method: "GET",
-      }),
-    });
-    if (res.ok) {
-      const data = await res.json();
-      generatedPresignedUrl.value = data.url;
-      presignExpiresAt.value = data.expiresAt;
-    } else {
-      toast.error("Gagal membuat tautan presigned");
-    }
-  } catch {
-    toast.error("Kesalahan jaringan");
-  }
-}
-
-function copyPresignedUrl() {
-  if (!generatedPresignedUrl.value) return;
-  navigator.clipboard.writeText(generatedPresignedUrl.value);
-  toast.success("Tautan presigned disalin ke clipboard!");
 }
 
 onMounted(() => {

@@ -1,0 +1,219 @@
+import { Elysia } from "elysia";
+import { eq } from "drizzle-orm";
+import type { AppDatabase } from "../db/client";
+import { buckets, objects, s3AccessKeys } from "../db/schema";
+import type { S3Engine } from "../s3/engine";
+import type { TokenCipher } from "../core/crypto";
+import { generatePresignedUrl } from "../s3/sigv4";
+
+export function createBucketsRoutes(
+  db: AppDatabase,
+  cipher: TokenCipher,
+  engine: S3Engine
+) {
+  const router = new Elysia();
+
+  // List Buckets
+  router.get("/buckets", async () => {
+    const list = db.select().from(buckets).all();
+    return list.map((b) => {
+      const objs = db.select().from(objects).where(eq(objects.bucketId, b.id)).all();
+      const totalSize = objs.reduce((sum, o) => sum + (o.size || 0), 0);
+      return {
+        id: b.id,
+        name: b.name,
+        createdAt: b.createdAt,
+        objectsCount: objs.length,
+        totalSize,
+      };
+    });
+  });
+
+  // Create Bucket
+  router.post("/buckets", async ({ body, set }) => {
+    const { name } = body as { name?: string };
+    if (!name || !/^[a-z0-9.-]{3,63}$/.test(name)) {
+      set.status = 400;
+      return { error: "Nama bucket tidak valid (3-63 karakter a-z, 0-9, dot, minus)" };
+    }
+
+    const existing = db.select().from(buckets).where(eq(buckets.name, name)).get();
+    if (existing) {
+      set.status = 409;
+      return { error: "Bucket dengan nama tersebut sudah ada" };
+    }
+
+    const newBucket = {
+      id: crypto.randomUUID(),
+      name,
+      createdAt: new Date().toISOString(),
+    };
+    db.insert(buckets).values(newBucket).run();
+    return newBucket;
+  });
+
+  // Delete Bucket
+  router.delete("/buckets/:id", async ({ params, set }) => {
+    const objs = db.select().from(objects).where(eq(objects.bucketId, params.id)).all();
+    if (objs.length > 0) {
+      set.status = 409;
+      return { error: "Bucket tidak dapat dihapus karena masih berisi file" };
+    }
+    db.delete(buckets).where(eq(buckets.id, params.id)).run();
+    return { success: true };
+  });
+
+  // List Objects in Bucket
+  router.get("/buckets/:id/objects", async ({ params, query }) => {
+    const bucket = db.select().from(buckets).where(eq(buckets.id, params.id)).get();
+    if (!bucket) return [];
+
+    const prefix = (query.prefix as string) || "";
+    const allObjs = db.select().from(objects).where(eq(objects.bucketId, bucket.id)).all();
+
+    return allObjs
+      .filter((o) => o.objectKey.startsWith(prefix))
+      .map((o) => ({
+        id: o.id,
+        key: o.objectKey,
+        size: o.size,
+        etag: o.etag,
+        contentType: o.contentType,
+        updatedAt: o.updatedAt,
+      }));
+  });
+
+  // Browser Direct Upload
+  router.post("/buckets/:id/upload", async ({ params, query, request, set }) => {
+    const bucket = db.select().from(buckets).where(eq(buckets.id, params.id)).get();
+    if (!bucket) {
+      set.status = 404;
+      return { error: "Bucket not found" };
+    }
+
+    const key = (query.key as string) || "";
+    if (!key || !request.body) {
+      set.status = 400;
+      return { error: "Missing key or request body" };
+    }
+
+    const contentType = request.headers.get("content-type") || "application/octet-stream";
+    const res = await engine.putObject(bucket.name, key, contentType, "{}", request.body);
+    return res;
+  });
+
+  // Create Virtual Directory Marker
+  router.post("/buckets/:id/folder", async ({ params, body, set }) => {
+    const bucket = db.select().from(buckets).where(eq(buckets.id, params.id)).get();
+    if (!bucket) {
+      set.status = 404;
+      return { error: "Bucket tidak ditemukan" };
+    }
+    const { folderName, prefix } = body as { folderName?: string; prefix?: string };
+    if (!folderName) {
+      set.status = 400;
+      return { error: "Nama folder tidak boleh kosong" };
+    }
+    const cleanName = folderName.trim().replace(/^\/+|\/+$/g, "");
+    const basePrefix = prefix ? prefix.replace(/^\/+|\/+$/g, "") + "/" : "";
+    const folderKey = `${basePrefix}${cleanName}/`;
+
+    const emptyStream = new ReadableStream({
+      start(controller) {
+        controller.close();
+      },
+    });
+    const res = await engine.putObject(
+      bucket.name,
+      folderKey,
+      "application/x-directory",
+      "{}",
+      emptyStream
+    );
+    return { success: true, key: folderKey, res };
+  });
+
+  // Browser Direct Download
+  router.get("/buckets/:id/download", async ({ params, query, set }) => {
+    const bucket = db.select().from(buckets).where(eq(buckets.id, params.id)).get();
+    if (!bucket) {
+      set.status = 404;
+      return "Bucket not found";
+    }
+    const key = query.key as string;
+    const { obj, response: driveRes } = await engine.getObject(bucket.name, key);
+
+    set.status = driveRes.status;
+    set.headers["Content-Type"] = obj.contentType || "application/octet-stream";
+    set.headers["Content-Disposition"] = `attachment; filename="${key.split("/").pop()}"`;
+    return driveRes.body;
+  });
+
+  // Delete Object
+  router.delete("/buckets/:id/objects", async ({ params, query }) => {
+    const bucket = db.select().from(buckets).where(eq(buckets.id, params.id)).get();
+    if (!bucket) return { success: false };
+    const key = query.key as string;
+    await engine.deleteObject(bucket.name, key);
+    return { success: true };
+  });
+
+  // Generate S3 Presigned URL
+  router.post("/buckets/:id/presign", async ({ params, body, set }) => {
+    const bucket = db.select().from(buckets).where(eq(buckets.id, params.id)).get();
+    if (!bucket) {
+      set.status = 404;
+      return { error: "Bucket tidak ditemukan" };
+    }
+    const { key, expiresIn = 3600, method = "GET" } = body as {
+      key?: string;
+      expiresIn?: number;
+      method?: string;
+    };
+    if (!key) {
+      set.status = 400;
+      return { error: "Parameter 'key' wajib diisi" };
+    }
+
+    let keyRow = db.select().from(s3AccessKeys).all()[0];
+    let secretKey = "";
+    if (keyRow) {
+      secretKey = await cipher.decrypt(keyRow.secretHash);
+    } else {
+      const rawKey = new Uint8Array(16);
+      const rawSecret = new Uint8Array(32);
+      crypto.getRandomValues(rawKey);
+      crypto.getRandomValues(rawSecret);
+      const accessKeyId = "G3" + Buffer.from(rawKey).toString("hex").toUpperCase();
+      secretKey = Buffer.from(rawSecret).toString("base64url");
+      const secretHash = await cipher.encrypt(secretKey);
+      keyRow = {
+        id: crypto.randomUUID(),
+        accessKeyId,
+        secretHash,
+        label: "Default Presign Key",
+        createdAt: new Date().toISOString(),
+      };
+      db.insert(s3AccessKeys).values(keyRow).run();
+    }
+
+    const host = process.env.G3_HOST || "localhost";
+    const s3Port = process.env.G3_S3_PORT || "9000";
+    const endpoint = `http://${host}:${s3Port}`;
+
+    const url = await generatePresignedUrl({
+      endpoint,
+      bucket: bucket.name,
+      key,
+      accessKeyId: keyRow.accessKeyId,
+      secretKey,
+      expiresInSeconds: Number(expiresIn),
+      method,
+    });
+
+    const expiresAt = new Date(Date.now() + Number(expiresIn) * 1000).toISOString();
+    return { success: true, url, expiresAt, expiresIn: Number(expiresIn) };
+  });
+
+  return router;
+}
