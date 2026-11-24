@@ -1,38 +1,28 @@
 <template>
-  <div class="space-y-6">
-    <!-- Header -->
-    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-subtle">
-      <div>
-        <h1 class="text-xl font-bold tracking-tight text-primary">Ringkasan Sistem</h1>
-        <p class="text-xs text-secondary mt-0.5">Pantauan pool penyimpanan Google Drive dan trafik S3</p>
-      </div>
-      <div class="flex items-center gap-2">
-        <button
-          @click="runGarbageCollection"
-          :disabled="isCleaning"
-          class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-surface hover:bg-surface-raised border border-subtle text-primary transition-all flex items-center gap-1.5 active:scale-[0.99]"
-        >
-          <AppIcon name="refresh" class="w-3.5 h-3.5 text-secondary" :class="{ 'animate-spin': isCleaning }" />
-          <span>{{ isCleaning ? "Membersihkan..." : "Garbage Collect" }}</span>
-        </button>
+  <div class="space-y-0">
+    <!-- Teleport primary actions into Sticky Top Header -->
+    <Teleport to="#header-actions">
+      <button
+        @click="runGarbageCollection"
+        :disabled="isCleaning"
+        class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-surface hover:bg-surface-raised border border-subtle text-primary transition-all hover:scale-[1.02] active:scale-[0.98] shadow-2xs disabled:opacity-50"
+        title="Bersihkan pecahan multipart kadaluarsa"
+      >
+        <AppIcon name="refresh" class="w-3.5 h-3.5 text-secondary" :class="{ 'animate-spin': isCleaning }" />
+        <span>{{ isCleaning ? "Membersihkan..." : "Garbage Collect" }}</span>
+      </button>
+    </Teleport>
 
-        <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-mono font-medium bg-success-bg text-success border border-success-border">
-          <span class="w-1.5 h-1.5 rounded-full bg-success animate-pulse"></span>
-          Aktif (:9000)
-        </span>
-      </div>
-    </div>
-
-    <!-- Bento Grid Metrics -->
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-      <!-- Card 1: Total Kapasitas Pool -->
-      <div class="bg-surface border border-subtle rounded-xl p-5 shadow-xs flex flex-col justify-between">
+    <!-- Mobile Horizontal KPI Rail / Desktop Swiss Hairline 3-Column Grid -->
+    <div class="flex overflow-x-auto snap-x snap-mandatory divide-x divide-subtle border-b border-subtle bg-surface md:grid md:grid-cols-3 md:overflow-visible">
+      <!-- KPI 1: Kapasitas Pool Drive -->
+      <div class="shrink-0 min-w-[75%] sm:min-w-[50%] snap-start md:min-w-0 p-5 flex flex-col justify-between">
         <div>
           <div class="flex items-center justify-between text-secondary mb-2">
-            <span class="text-xs font-semibold uppercase tracking-wider">Kapasitas Pool Drive</span>
+            <span class="text-[11px] font-mono font-bold uppercase tracking-wider text-muted">Kapasitas Pool Drive</span>
             <AppIcon name="database" class="w-4 h-4 text-muted" />
           </div>
-          <div class="text-2xl font-bold font-mono tracking-tight text-primary">
+          <div class="text-2xl font-bold font-mono tracking-wider text-primary">
             {{ formatBytes(stats.totalStorageUsage) }}
           </div>
           <div class="text-xs text-muted font-mono mt-1">
@@ -40,8 +30,8 @@
           </div>
         </div>
 
-        <div class="mt-4 pt-4 border-t border-subtle">
-          <div class="w-full h-2 bg-canvas rounded-full overflow-hidden border border-subtle">
+        <div class="mt-4 pt-3 border-t border-subtle">
+          <div class="w-full h-1.5 bg-canvas rounded-full overflow-hidden border border-subtle">
             <div
               class="h-full bg-brand transition-all duration-500"
               :style="{ width: `${usagePercent}%` }"
@@ -54,14 +44,14 @@
         </div>
       </div>
 
-      <!-- Card 2: Buckets & Objek -->
-      <div class="bg-surface border border-subtle rounded-xl p-5 shadow-xs flex flex-col justify-between">
+      <!-- KPI 2: Objek S3 -->
+      <div class="shrink-0 min-w-[75%] sm:min-w-[50%] snap-start md:min-w-0 p-5 flex flex-col justify-between">
         <div>
           <div class="flex items-center justify-between text-secondary mb-2">
-            <span class="text-xs font-semibold uppercase tracking-wider">Objek S3 Tersimpan</span>
+            <span class="text-[11px] font-mono font-bold uppercase tracking-wider text-muted">Objek S3 Tersimpan</span>
             <AppIcon name="folder" class="w-4 h-4 text-muted" />
           </div>
-          <div class="text-2xl font-bold font-mono tracking-tight text-primary">
+          <div class="text-2xl font-bold font-mono tracking-wider text-primary">
             {{ stats.objectsCount }}
           </div>
           <div class="text-xs text-muted font-mono mt-1">
@@ -69,19 +59,20 @@
           </div>
         </div>
 
-        <div class="mt-4 pt-4 border-t border-subtle flex items-center justify-between text-xs">
+        <div class="mt-4 pt-3 border-t border-subtle flex items-center justify-between text-xs">
           <RouterLink to="/buckets" class="text-primary font-medium hover:underline inline-flex items-center gap-1">
-            Buka File Manager &rarr;
+            <span>Buka File Manager</span>
+            <span>&rarr;</span>
           </RouterLink>
           <span class="font-mono text-muted">{{ formatBytes(stats.totalObjectBytes) }}</span>
         </div>
       </div>
 
-      <!-- Card 3: Konfigurasi Endpoint S3 -->
-      <div class="bg-surface border border-subtle rounded-xl p-5 shadow-xs flex flex-col justify-between">
+      <!-- KPI 3: Endpoint AWS S3 -->
+      <div class="shrink-0 min-w-[75%] sm:min-w-[50%] snap-start md:min-w-0 p-5 flex flex-col justify-between">
         <div>
           <div class="flex items-center justify-between text-secondary mb-2">
-            <span class="text-xs font-semibold uppercase tracking-wider">Endpoint AWS S3</span>
+            <span class="text-[11px] font-mono font-bold uppercase tracking-wider text-muted">Endpoint AWS S3</span>
             <AppIcon name="server" class="w-4 h-4 text-muted" />
           </div>
           <div class="p-2.5 bg-canvas border border-subtle rounded-lg font-mono text-xs text-primary break-all select-all">
@@ -89,26 +80,27 @@
           </div>
         </div>
 
-        <div class="mt-4 pt-4 border-t border-subtle flex items-center justify-between text-xs text-secondary">
-          <span>Format Path-Style</span>
-          <RouterLink to="/keys" class="text-primary font-medium hover:underline">
-            Kredensial SigV4 &rarr;
+        <div class="mt-4 pt-3 border-t border-subtle flex items-center justify-between text-xs text-secondary">
+          <span class="font-mono text-[11px] text-muted">Path-Style</span>
+          <RouterLink to="/keys" class="text-primary font-medium hover:underline inline-flex items-center gap-1">
+            <span>Kredensial SigV4</span>
+            <span>&rarr;</span>
           </RouterLink>
         </div>
       </div>
     </div>
 
-    <!-- Balancing Strategy & Storage Maintenance Section -->
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-      <!-- Strategy Selector -->
-      <div class="bg-surface border border-subtle rounded-xl p-5 shadow-xs flex flex-col justify-between space-y-4">
+    <!-- Balancing Strategy & Storage Maintenance Section (Hairline Docked) -->
+    <div class="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-subtle border-b border-subtle bg-surface">
+      <!-- Balancer Strategy Selector -->
+      <div class="p-5 flex flex-col justify-between space-y-4">
         <div>
           <div class="flex items-center justify-between mb-2">
             <h3 class="font-bold text-sm text-primary flex items-center gap-2">
               <AppIcon name="sliders" class="w-4 h-4 text-secondary" />
-              <span>Strategi Penyeimbang Multi-Akun (Balancer)</span>
+              <span>Strategi Penyeimbang Multi-Akun</span>
             </h3>
-            <span class="text-[11px] font-mono px-2 py-0.5 rounded-full bg-brand-subtle text-brand border border-subtle">
+            <span class="text-[10px] font-mono px-2 py-0.5 rounded-full bg-brand-subtle text-primary border border-subtle font-semibold">
               Aktif
             </span>
           </div>
@@ -123,7 +115,7 @@
             :key="s.id"
             @click="setBalancingStrategy(s.id)"
             :class="[
-              'p-2.5 rounded-lg border text-left transition-all',
+              'p-2.5 rounded-lg border text-left transition-all hover:scale-[1.01] active:scale-[0.98]',
               currentStrategy === s.id
                 ? 'bg-brand/10 border-brand text-primary ring-1 ring-brand'
                 : 'bg-canvas border-subtle hover:bg-surface-raised text-secondary',
@@ -136,14 +128,14 @@
       </div>
 
       <!-- Storage Garbage Collection Info -->
-      <div class="bg-surface border border-subtle rounded-xl p-5 shadow-xs flex flex-col justify-between space-y-4">
+      <div class="p-5 flex flex-col justify-between space-y-4">
         <div>
           <div class="flex items-center justify-between mb-2">
             <h3 class="font-bold text-sm text-primary flex items-center gap-2">
               <AppIcon name="trash" class="w-4 h-4 text-secondary" />
-              <span>Pembersihan Sampah & Sweeper Otomatis</span>
+              <span>Pembersihan Sampah & Sweeper</span>
             </h3>
-            <span class="text-[11px] font-mono px-2 py-0.5 rounded-full bg-surface-raised text-muted border border-subtle">
+            <span class="text-[10px] font-mono px-2 py-0.5 rounded-full bg-surface-raised text-muted border border-subtle">
               Tiap 1 Jam
             </span>
           </div>
@@ -159,28 +151,30 @@
           <button
             @click="runGarbageCollection"
             :disabled="isCleaning"
-            class="px-3 py-1.5 bg-brand text-brand-contrast font-semibold text-xs rounded-lg shadow-xs hover:opacity-90 active:scale-[0.99] transition-all flex items-center gap-1.5"
+            class="px-3 py-1.5 bg-neutral-900 text-white dark:bg-white dark:text-neutral-950 font-semibold text-xs rounded-lg shadow-2xs hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center gap-1.5"
           >
             <AppIcon name="refresh" class="w-3.5 h-3.5" :class="{ 'animate-spin': isCleaning }" />
-            <span>{{ isCleaning ? "Memproses..." : "Bersihkan Sekarang" }}</span>
+            <span>{{ isCleaning ? "Memproses..." : "Bersihkan" }}</span>
           </button>
         </div>
       </div>
     </div>
 
     <!-- Modular Integration Code Snippets -->
-    <CodeSnippetsCard />
+    <div class="border-b border-subtle">
+      <CodeSnippetsCard />
+    </div>
 
-    <!-- Accounts Pool Overview -->
-    <div class="bg-surface border border-subtle rounded-xl shadow-xs overflow-hidden">
-      <div class="p-4 border-b border-subtle flex items-center justify-between">
+    <!-- Accounts Pool Overview (Swiss Hairline Docked) -->
+    <div class="bg-surface">
+      <div class="p-4 sm:px-6 border-b border-subtle flex items-center justify-between">
         <div>
           <h2 class="font-bold text-sm text-primary">Pool Akun Google Drive</h2>
           <p class="text-xs text-muted">Akun yang tergabung dalam penyeimbang beban penyimpanan</p>
         </div>
         <RouterLink
           to="/accounts"
-          class="px-3 py-1.5 text-xs font-semibold bg-surface-raised hover:bg-surface-raised/80 border border-subtle rounded-lg text-primary transition-colors"
+          class="px-3 py-1.5 text-xs font-semibold bg-surface-raised hover:bg-surface-raised/80 border border-subtle rounded-lg text-primary hover:scale-[1.01] active:scale-[0.98] transition-all"
         >
           Kelola Akun
         </RouterLink>
@@ -190,16 +184,21 @@
         <div
           v-for="acc in stats.accounts"
           :key="acc.id"
-          class="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-sm"
+          class="p-4 sm:px-6 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-sm hover:bg-surface-raised/30 transition-colors"
         >
           <div class="flex items-center gap-3">
-            <div class="w-8 h-8 rounded-lg bg-canvas border border-subtle flex items-center justify-center font-mono text-xs font-semibold">
+            <div class="w-8 h-8 rounded-lg bg-canvas border border-subtle flex items-center justify-center font-mono text-xs font-semibold text-primary">
               G
             </div>
             <div>
-              <div class="font-medium text-primary font-mono text-xs">{{ acc.email }}</div>
-              <div class="text-[11px] text-muted">
-                Status: <span class="text-success font-medium capitalize">{{ acc.status }}</span>
+              <div class="font-semibold text-primary font-mono text-xs">{{ acc.email }}</div>
+              <div class="text-[11px] text-muted flex items-center gap-1.5 mt-0.5">
+                <span class="inline-flex items-center gap-1 text-success">
+                  <span class="w-1.5 h-1.5 rounded-full bg-success"></span>
+                  <span class="capitalize">{{ acc.status }}</span>
+                </span>
+                <span>&bull;</span>
+                <span>Ditautkan</span>
               </div>
             </div>
           </div>
@@ -207,11 +206,11 @@
           <div class="flex items-center gap-6 font-mono text-xs">
             <div>
               <span class="text-muted">Kapasitas: </span>
-              <span class="text-primary">{{ formatBytes(acc.storageUsage) }} / {{ formatBytes(acc.storageLimit) }}</span>
+              <span class="text-primary font-medium">{{ formatBytes(acc.storageUsage) }} / {{ formatBytes(acc.storageLimit) }}</span>
             </div>
             <div>
               <span class="text-muted">Upload Hari Ini: </span>
-              <span class="text-primary">{{ formatBytes(acc.dailyBytes) }}</span>
+              <span class="text-primary font-medium">{{ formatBytes(acc.dailyBytes) }}</span>
             </div>
           </div>
         </div>

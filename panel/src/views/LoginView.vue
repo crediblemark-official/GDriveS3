@@ -1,18 +1,23 @@
 <template>
   <div class="min-h-screen bg-canvas flex items-center justify-center p-4">
-    <div class="w-full max-w-sm bg-surface border border-subtle rounded-2xl p-6 md:p-8 shadow-sm">
-      <div class="flex items-center gap-3 mb-6">
-        <div class="w-10 h-10 rounded-xl bg-brand flex items-center justify-center text-brand-contrast font-mono font-bold text-base shadow-xs">
-          G3
+    <div class="w-full max-w-sm bg-surface border border-subtle rounded-2xl p-6 sm:p-8 shadow-sm space-y-6">
+      <!-- Abstract Geometric Logo & Brand -->
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-xl bg-neutral-900 text-white dark:bg-white dark:text-neutral-950 flex items-center justify-center shadow-xs shrink-0">
+          <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 2L2 7l10 5 10-5-10-5z" />
+            <path d="M2 17l10 5 10-5" />
+            <path d="M2 12l10 5 10-5" />
+          </svg>
         </div>
         <div>
-          <h1 class="font-bold text-lg tracking-tight text-primary">G3 Storage</h1>
-          <p class="text-xs text-muted">S3 Object Storage over Google Drive</p>
+          <h1 class="font-bold text-base tracking-tight text-primary leading-tight">G3 Storage</h1>
+          <p class="text-xs text-muted font-mono leading-tight mt-0.5">S3-over-Drive Panel</p>
         </div>
       </div>
 
       <form @submit.prevent="handleLogin" class="space-y-4">
-        <div v-if="errorMessage" class="p-3 text-xs bg-danger-bg text-danger border border-danger-border rounded-lg">
+        <div v-if="errorMessage" class="p-3 text-xs bg-danger-bg text-danger border border-danger-border rounded-xl font-medium">
           {{ errorMessage }}
         </div>
 
@@ -23,7 +28,7 @@
             type="email"
             required
             placeholder="admin@g3.local"
-            class="w-full px-3 py-2 text-sm bg-canvas border border-subtle rounded-lg text-primary focus:outline-none focus:border-border-strong transition-colors"
+            class="w-full px-3.5 py-2 text-sm bg-canvas border border-subtle rounded-lg text-primary focus:outline-none focus:border-border-strong focus:ring-2 focus:ring-indigo-500/15 transition-all"
           />
         </div>
 
@@ -34,18 +39,22 @@
             type="password"
             required
             placeholder="••••••••••••"
-            class="w-full px-3 py-2 text-sm bg-canvas border border-subtle rounded-lg text-primary focus:outline-none focus:border-border-strong transition-colors"
+            class="w-full px-3.5 py-2 text-sm bg-canvas border border-subtle rounded-lg text-primary focus:outline-none focus:border-border-strong focus:ring-2 focus:ring-indigo-500/15 transition-all"
           />
         </div>
 
         <button
           type="submit"
           :disabled="loading"
-          class="w-full py-2.5 px-4 bg-brand hover:opacity-90 active:scale-[0.99] text-brand-contrast text-sm font-semibold rounded-lg shadow-xs transition-all disabled:opacity-50"
+          class="w-full py-2.5 px-4 bg-neutral-900 text-white dark:bg-white dark:text-neutral-950 text-sm font-semibold rounded-lg shadow-2xs hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-50 disabled:hover:scale-100"
         >
-          {{ loading ? "Memproses..." : "Masuk ke Panel" }}
+          {{ loading ? "Memproses..." : "Masuk" }}
         </button>
       </form>
+
+      <div class="pt-2 border-t border-subtle text-center text-[11px] text-muted font-mono">
+        Default: admin@g3.local / change-me-now
+      </div>
     </div>
   </div>
 </template>

@@ -3,36 +3,47 @@
     class="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4 max-sm:items-end max-sm:p-0"
     @click.self="$emit('close')"
   >
-    <div class="bg-surface border border-subtle rounded-xl p-6 max-w-sm w-full shadow-md space-y-4 max-sm:rounded-b-none max-sm:rounded-t-2xl max-sm:border-b-0 max-sm:p-5">
-      <h2 class="font-bold text-base text-primary">Buat Folder Baru</h2>
+    <div class="bg-surface border border-subtle rounded-2xl p-6 max-w-sm w-full shadow-md space-y-4 max-sm:rounded-b-none max-sm:rounded-t-2xl max-sm:border-b-0 max-sm:p-5">
+      <div class="sm:hidden w-10 h-1 rounded-full bg-border-subtle mx-auto -mt-1 mb-2"></div>
+
+      <div class="flex items-center justify-between">
+        <h2 class="font-bold text-base text-primary">Buat Folder Baru</h2>
+        <button
+          @click="$emit('close')"
+          class="p-1 rounded-md text-muted hover:text-primary transition-colors"
+        >
+          &times;
+        </button>
+      </div>
+
       <div class="space-y-1.5">
         <label class="text-xs font-semibold text-secondary">Nama Folder</label>
         <div class="flex items-center">
-          <span v-if="currentPrefix" class="text-xs font-mono text-muted mr-1">/{{ currentPrefix }}</span>
+          <span v-if="currentPrefix" class="text-xs font-mono text-muted mr-1.5">/{{ currentPrefix }}</span>
           <input
             v-model="folderName"
             @keyup.enter="createFolder"
             type="text"
             placeholder="dokumen-2026"
-            class="w-full px-3 py-2 text-sm bg-canvas border border-subtle rounded-lg font-mono text-primary focus:outline-none focus:border-border-strong"
+            class="w-full px-3.5 py-2 text-sm bg-canvas border border-subtle rounded-lg font-mono text-primary focus:outline-none focus:border-border-strong focus:ring-2 focus:ring-indigo-500/15 transition-all"
           />
         </div>
         <p class="text-[11px] text-muted">Folder akan dibuat sebagai penanda prefix S3.</p>
       </div>
 
-      <div class="flex justify-end gap-2 pt-2">
+      <div class="flex justify-end gap-2 pt-2 border-t border-subtle">
         <button
           @click="$emit('close')"
-          class="px-3 py-1.5 text-xs font-medium border border-subtle rounded-lg hover:bg-surface-raised text-secondary"
+          class="px-3 py-1.5 text-xs font-medium border border-subtle rounded-lg hover:bg-surface-raised text-secondary transition-colors"
         >
           Batal
         </button>
         <button
           @click="createFolder"
           :disabled="isSubmitting || !folderName.trim()"
-          class="px-4 py-1.5 text-xs font-semibold bg-brand text-brand-contrast rounded-lg shadow-xs hover:opacity-90 disabled:opacity-50"
+          class="px-4 py-1.5 text-xs font-semibold bg-neutral-900 text-white dark:bg-white dark:text-neutral-950 rounded-lg shadow-2xs hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-50"
         >
-          {{ isSubmitting ? "Membuat..." : "Buat Folder" }}
+          {{ isSubmitting ? "Membuat..." : "Buat" }}
         </button>
       </div>
     </div>

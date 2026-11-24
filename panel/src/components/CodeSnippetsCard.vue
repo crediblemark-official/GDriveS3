@@ -1,12 +1,12 @@
 <template>
-  <div class="bg-surface border border-subtle rounded-xl shadow-xs overflow-hidden">
-    <div class="p-4 border-b border-subtle flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+  <div class="bg-surface overflow-hidden">
+    <div class="p-4 sm:px-6 border-b border-subtle flex flex-col sm:flex-row sm:items-center justify-between gap-3">
       <div>
         <h2 class="font-bold text-sm text-primary flex items-center gap-2">
           <AppIcon name="code" class="w-4 h-4 text-secondary" />
           <span>Koneksi Klien AWS S3</span>
         </h2>
-        <p class="text-xs text-muted">Contoh siap pakai untuk menghubungkan aplikasi Anda ke G3 Storage</p>
+        <p class="text-xs text-muted mt-0.5">Contoh siap pakai untuk menghubungkan aplikasi Anda ke G3 Storage</p>
       </div>
 
       <!-- Language / Tool Tabs -->
@@ -16,9 +16,9 @@
           :key="tab.id"
           @click="activeTab = tab.id"
           :class="[
-            'px-2.5 py-1 text-xs font-mono font-medium rounded-md transition-all',
+            'px-2.5 py-1 text-xs font-mono font-medium rounded-md transition-all hover:scale-[1.01] active:scale-[0.98]',
             activeTab === tab.id
-              ? 'bg-surface text-primary shadow-xs'
+              ? 'bg-surface text-primary shadow-2xs font-semibold'
               : 'text-muted hover:text-primary',
           ]"
         >
@@ -27,11 +27,11 @@
       </div>
     </div>
 
-    <!-- Code Box -->
-    <div class="p-4 bg-neutral-950 text-neutral-100 font-mono text-xs overflow-x-auto relative group">
+    <!-- Code Box with High-Contrast Well -->
+    <div class="p-4 sm:px-6 bg-neutral-950 text-neutral-100 font-mono text-xs overflow-x-auto relative group">
       <button
         @click="copySnippet"
-        class="absolute top-3 right-3 px-2 py-1 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 rounded text-[11px] transition-colors flex items-center gap-1 opacity-80 group-hover:opacity-100"
+        class="absolute top-3 right-4 sm:right-6 px-2.5 py-1 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 rounded-md text-[11px] transition-all flex items-center gap-1.5 opacity-90 hover:opacity-100 hover:scale-[1.02] active:scale-[0.98] shadow-2xs"
       >
         <AppIcon name="copy" class="w-3 h-3" />
         <span>Salin</span>

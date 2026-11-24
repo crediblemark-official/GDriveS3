@@ -1,70 +1,69 @@
 <template>
-  <div class="space-y-6">
-    <!-- Header with Breadcrumbs & Actions -->
-    <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-subtle">
-      <div>
-        <div class="flex items-center gap-1.5 text-xs text-muted font-mono mb-1">
-          <RouterLink to="/buckets" class="hover:text-primary transition-colors">Buckets</RouterLink>
-          <span>/</span>
-          <span class="text-primary font-semibold">{{ bucketName }}</span>
-          <span class="text-muted">/</span>
-          <span
-            v-for="(crumb, idx) in breadcrumbs"
-            :key="idx"
-            class="flex items-center gap-1.5"
+  <div class="space-y-0">
+    <!-- Teleport primary actions into Sticky Top Header -->
+    <Teleport to="#header-actions">
+      <button
+        @click="showCreateFolderModal = true"
+        class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-surface hover:bg-surface-raised border border-subtle text-primary text-xs font-medium rounded-lg shadow-2xs hover:scale-[1.02] active:scale-[0.98] transition-all"
+        title="Buat Folder / Prefix"
+      >
+        <AppIcon name="folder" class="w-3.5 h-3.5 text-secondary" />
+        <span class="hidden sm:inline">Folder</span>
+      </button>
+
+      <label
+        class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-neutral-900 text-white dark:bg-white dark:text-neutral-950 text-xs font-semibold rounded-lg shadow-2xs hover:scale-[1.02] active:scale-[0.98] cursor-pointer transition-all disabled:opacity-50"
+      >
+        <AppIcon name="upload" class="w-3.5 h-3.5" />
+        <span>{{ uploading ? "Mengunggah..." : "Unggah" }}</span>
+        <input
+          type="file"
+          multiple
+          @change="handleFileInput"
+          :disabled="uploading"
+          class="hidden"
+        />
+      </label>
+    </Teleport>
+
+    <!-- Breadcrumb Navigation Bar (Swiss Hairline Docked) -->
+    <div class="p-3 sm:px-6 bg-surface border-b border-subtle flex flex-wrap items-center justify-between gap-3 text-xs font-mono">
+      <div class="flex items-center gap-1.5 flex-wrap min-w-0">
+        <RouterLink to="/buckets" class="text-secondary hover:text-primary transition-colors">Buckets</RouterLink>
+        <span class="text-muted">/</span>
+        <span class="text-primary font-bold">{{ bucketName }}</span>
+        <span class="text-muted">/</span>
+        <span
+          v-for="(crumb, idx) in breadcrumbs"
+          :key="idx"
+          class="flex items-center gap-1.5"
+        >
+          <button
+            @click="navigateToPrefix(crumb.prefix)"
+            class="text-secondary hover:text-primary transition-colors underline-offset-2 hover:underline"
           >
-            <button
-              @click="navigateToPrefix(crumb.prefix)"
-              class="hover:text-primary transition-colors underline-offset-2 hover:underline"
-            >
-              {{ crumb.name }}
-            </button>
-            <span class="text-muted">/</span>
-          </span>
-        </div>
-        <h1 class="text-xl font-bold tracking-tight text-primary flex items-center gap-2">
-          <span>File Manager</span>
-          <span class="text-xs font-normal font-mono px-2 py-0.5 rounded-full bg-surface-raised border border-subtle text-secondary">
-            {{ bucketName }}
-          </span>
-        </h1>
+            {{ crumb.name }}
+          </button>
+          <span class="text-muted">/</span>
+        </span>
       </div>
 
-      <!-- Action Buttons -->
-      <div class="flex items-center flex-wrap gap-2">
-        <button
-          @click="showCreateFolderModal = true"
-          class="px-3 py-2 bg-surface hover:bg-surface-raised border border-subtle text-primary text-xs font-medium rounded-lg shadow-xs flex items-center gap-1.5 transition-all"
-        >
-          <AppIcon name="folder" class="w-4 h-4 text-secondary" />
-          <span>Buat Folder</span>
-        </button>
-
-        <label
-          class="px-3.5 py-2 bg-brand hover:opacity-90 active:scale-[0.99] text-brand-contrast text-xs font-semibold rounded-lg shadow-xs flex items-center gap-2 cursor-pointer transition-all"
-        >
-          <AppIcon name="upload" class="w-4 h-4" />
-          <span>{{ uploading ? "Mengunggah..." : "Unggah File" }}</span>
-          <input
-            type="file"
-            multiple
-            @change="handleFileInput"
-            :disabled="uploading"
-            class="hidden"
-          />
-        </label>
+      <div class="flex items-center gap-2 text-muted text-[11px]">
+        <span>{{ filteredItems.length }} item</span>
+        <span>&bull;</span>
+        <span class="truncate max-w-[180px]">Prefix: {{ currentPrefix ? `/${currentPrefix}` : "/" }}</span>
       </div>
     </div>
 
-    <!-- Search & Filter Bar + Dropzone -->
-    <div class="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+    <!-- Search & Dropzone Strip (Swiss Hairline Docked) -->
+    <div class="p-3 sm:px-6 bg-canvas border-b border-subtle flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
       <div class="relative flex-1 max-w-md">
-        <AppIcon name="search" class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
+        <AppIcon name="search" class="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
         <input
           v-model="searchQuery"
           type="text"
           placeholder="Cari file dalam bucket ini..."
-          class="w-full pl-9 pr-3 py-2 text-xs bg-surface border border-subtle rounded-lg text-primary placeholder-muted focus:outline-none focus:border-border-strong font-mono"
+          class="w-full pl-8 pr-7 py-1.5 text-xs bg-surface border border-subtle rounded-lg text-primary placeholder-muted focus:outline-none focus:border-border-strong font-mono transition-colors"
         />
         <button
           v-if="searchQuery"
@@ -75,65 +74,57 @@
         </button>
       </div>
 
-      <div class="flex items-center gap-2 text-xs font-mono text-muted">
-        <span>{{ filteredItems.length }} item</span>
-        <span>&bull;</span>
-        <span>Folder: {{ currentPrefix ? `/${currentPrefix}` : "/" }}</span>
+      <!-- Drag & Drop Zone -->
+      <div
+        @dragover.prevent="isDragging = true"
+        @dragleave.prevent="isDragging = false"
+        @drop.prevent="handleDrop"
+        :class="[
+          'px-4 py-2 border border-dashed rounded-lg transition-all text-center flex items-center justify-center gap-2 text-xs',
+          isDragging
+            ? 'border-brand bg-brand-subtle text-primary ring-1 ring-brand'
+            : 'border-subtle bg-surface text-muted hover:border-border-strong',
+        ]"
+      >
+        <AppIcon name="upload" class="w-3.5 h-3.5 shrink-0" />
+        <span class="text-[11px]">
+          Tarik & letakkan file untuk mengunggah ke <strong>{{ currentPrefix ? `/${currentPrefix}` : "root" }}</strong>
+        </span>
       </div>
     </div>
 
-    <!-- Drag & Drop Zone -->
-    <div
-      @dragover.prevent="isDragging = true"
-      @dragleave.prevent="isDragging = false"
-      @drop.prevent="handleDrop"
-      :class="[
-        'border-2 border-dashed rounded-xl p-4 transition-all text-center flex items-center justify-center gap-3',
-        isDragging
-          ? 'border-brand bg-brand-subtle/20 text-brand'
-          : 'border-subtle bg-surface/50 text-muted hover:border-border-strong',
-      ]"
-    >
-      <AppIcon name="upload" class="w-5 h-5 shrink-0" />
-      <span class="text-xs">
-        Tarik & letakkan file di sini untuk mengunggah langsung ke <strong>{{ currentPrefix ? `/${currentPrefix}` : "root bucket" }}</strong>
-      </span>
-    </div>
-
-    <!-- Objects & Folders Table -->
-    <div class="bg-surface border border-subtle rounded-xl shadow-xs overflow-hidden">
-      <table class="w-full text-left text-sm">
-        <thead class="bg-canvas border-b border-subtle text-secondary font-mono text-xs">
+    <!-- Objects & Folders Table (Swiss Hairline Docked) -->
+    <div class="bg-surface border-b border-subtle overflow-x-auto">
+      <table class="w-full text-left text-sm border-collapse">
+        <thead class="bg-canvas border-b border-subtle text-muted font-mono text-[11px] uppercase tracking-wider">
           <tr>
-            <th class="py-3 px-4 font-semibold">Nama Item</th>
-            <th class="py-3 px-4 font-semibold">Tipe Konten</th>
-            <th class="py-3 px-4 font-semibold">Ukuran</th>
-            <th class="py-3 px-4 font-semibold">ETag</th>
-            <th class="py-3 px-4 font-semibold">Diperbarui</th>
-            <th class="py-3 px-4 font-semibold text-right">Aksi</th>
+            <th class="py-3 px-4 sm:px-6 font-semibold">Nama Item & Metadata</th>
+            <th class="py-3 px-4 sm:px-6 font-semibold hidden md:table-cell">Tipe</th>
+            <th class="py-3 px-4 sm:px-6 font-semibold hidden md:table-cell">Ukuran</th>
+            <th class="py-3 px-4 sm:px-6 font-semibold hidden lg:table-cell">Diperbarui</th>
+            <th class="py-3 px-4 sm:px-6 font-semibold text-right">Aksi</th>
           </tr>
         </thead>
 
         <!-- Anti-CLS Skeleton Loading State -->
         <tbody v-if="loading" class="divide-y divide-subtle">
           <tr v-for="n in 5" :key="n" class="animate-pulse">
-            <td class="py-3 px-4"><div class="h-4 bg-surface-raised rounded w-48"></div></td>
-            <td class="py-3 px-4"><div class="h-4 bg-surface-raised rounded w-24"></div></td>
-            <td class="py-3 px-4"><div class="h-4 bg-surface-raised rounded w-16"></div></td>
-            <td class="py-3 px-4"><div class="h-4 bg-surface-raised rounded w-20"></div></td>
-            <td class="py-3 px-4"><div class="h-4 bg-surface-raised rounded w-28"></div></td>
-            <td class="py-3 px-4 text-right"><div class="h-4 bg-surface-raised rounded w-16 ml-auto"></div></td>
+            <td class="py-3 px-4 sm:px-6"><div class="h-4 bg-surface-raised rounded w-48"></div></td>
+            <td class="py-3 px-4 sm:px-6 hidden md:table-cell"><div class="h-4 bg-surface-raised rounded w-24"></div></td>
+            <td class="py-3 px-4 sm:px-6 hidden md:table-cell"><div class="h-4 bg-surface-raised rounded w-16"></div></td>
+            <td class="py-3 px-4 sm:px-6 hidden lg:table-cell"><div class="h-4 bg-surface-raised rounded w-28"></div></td>
+            <td class="py-3 px-4 sm:px-6 text-right"><div class="h-4 bg-surface-raised rounded w-16 ml-auto"></div></td>
           </tr>
         </tbody>
 
         <tbody v-else class="divide-y divide-subtle">
-          <!-- Back to Parent Row -->
+          <!-- Back to Parent Directory Row -->
           <tr
             v-if="currentPrefix"
             @click="navigateUp"
             class="hover:bg-surface-raised/50 cursor-pointer transition-colors"
           >
-            <td colspan="6" class="py-2.5 px-4 font-mono text-xs text-primary flex items-center gap-2">
+            <td colspan="5" class="py-2.5 px-4 sm:px-6 font-mono text-xs text-primary flex items-center gap-2">
               <AppIcon name="folder" class="w-4 h-4 text-secondary" />
               <span class="font-bold">..</span>
               <span class="text-muted">(Kembali ke direktori atas)</span>
@@ -146,85 +137,106 @@
             :key="item.key"
             class="hover:bg-surface-raised/40 transition-colors"
           >
-            <td class="py-3 px-4 font-mono font-medium text-primary">
+            <!-- Column 1: Name + Secondary Metadata (Max 2 Lines per Row) -->
+            <td class="py-3 px-4 sm:px-6 align-middle font-mono font-medium text-primary">
               <button
                 v-if="item.isFolder"
                 @click="navigateToPrefix(item.folderPrefix)"
                 class="flex items-center gap-2 hover:underline text-left"
               >
-                <AppIcon name="folder" class="w-4 h-4 text-brand" />
-                <span>{{ item.displayName }}/</span>
+                <AppIcon name="folder" class="w-4 h-4 text-secondary shrink-0" />
+                <span class="truncate max-w-[280px] sm:max-w-md font-semibold">{{ item.displayName }}/</span>
               </button>
 
-              <div v-else class="flex items-center gap-2">
+              <div v-else class="flex items-center gap-2 min-w-0">
                 <AppIcon name="file" class="w-4 h-4 text-muted shrink-0" />
-                <span class="truncate max-w-[280px]" :title="item.key">{{ item.displayName }}</span>
+                <span class="truncate max-w-[240px] sm:max-w-md" :title="item.key">{{ item.displayName }}</span>
+              </div>
+
+              <!-- Line 2: Compact Secondary Metadata with Middle Dots -->
+              <div class="text-[11px] text-muted font-mono flex items-center gap-1.5 mt-0.5 truncate">
+                <span v-if="!item.isFolder">{{ formatBytes(item.size) }}</span>
+                <span v-if="!item.isFolder">&bull;</span>
+                <span v-if="!item.isFolder" class="md:hidden">{{ item.contentType }}</span>
+                <span v-if="!item.isFolder" class="md:hidden">&bull;</span>
+                <span v-if="item.updatedAt">{{ new Date(item.updatedAt).toLocaleString() }}</span>
+                <span v-if="item.isFolder">Direktori S3</span>
               </div>
             </td>
 
-            <td class="py-3 px-4 font-mono text-xs text-secondary">
-              {{ item.isFolder ? "Folder Direktori" : item.contentType }}
+            <td class="py-3 px-4 sm:px-6 font-mono text-xs text-secondary hidden md:table-cell align-middle truncate max-w-[160px]">
+              {{ item.isFolder ? "Folder" : item.contentType }}
             </td>
-            <td class="py-3 px-4 font-mono text-xs text-secondary">
+            <td class="py-3 px-4 sm:px-6 font-mono text-xs text-secondary hidden md:table-cell align-middle">
               {{ item.isFolder ? "-" : formatBytes(item.size) }}
             </td>
-            <td class="py-3 px-4 font-mono text-xs text-muted truncate max-w-[120px]">
-              {{ item.isFolder ? "-" : item.etag }}
-            </td>
-            <td class="py-3 px-4 font-mono text-xs text-muted">
-              {{ item.updatedAt ? new Date(item.updatedAt).toLocaleString() : "-" }}
+            <td class="py-3 px-4 sm:px-6 font-mono text-xs text-muted hidden lg:table-cell align-middle">
+              {{ item.updatedAt ? new Date(item.updatedAt).toLocaleDateString() : "-" }}
             </td>
 
-            <!-- Actions -->
-            <td class="py-3 px-4 text-right space-x-1.5 whitespace-nowrap">
+            <!-- Column: Icon-Only Action Buttons (Strictly Following One-Word/Icon-Only Rule) -->
+            <td class="py-3 px-4 sm:px-6 text-right align-middle whitespace-nowrap">
               <template v-if="!item.isFolder">
-                <button
-                  @click="previewItem = item"
-                  title="Lihat Pratinjau"
-                  class="p-1.5 text-xs font-medium border border-subtle rounded-md hover:bg-surface-raised text-secondary hover:text-primary transition-colors inline-flex items-center"
-                >
-                  <AppIcon name="eye" class="w-3.5 h-3.5" />
-                </button>
+                <div class="flex items-center justify-end gap-1">
+                  <!-- Preview -->
+                  <button
+                    @click="previewItem = item"
+                    aria-label="Lihat Pratinjau"
+                    title="Lihat Pratinjau"
+                    class="p-1.5 text-secondary hover:text-primary hover:bg-surface-raised rounded-lg hover:scale-105 active:scale-95 transition-all inline-flex items-center"
+                  >
+                    <AppIcon name="eye" class="w-3.5 h-3.5" />
+                  </button>
 
-                <button
-                  @click="copyS3Uri(item.key)"
-                  title="Salin S3 URI (s3://bucket/key)"
-                  class="p-1.5 text-xs font-medium border border-subtle rounded-md hover:bg-surface-raised text-secondary hover:text-primary transition-colors inline-flex items-center"
-                >
-                  <AppIcon name="copy" class="w-3.5 h-3.5" />
-                </button>
+                  <!-- Copy URI -->
+                  <button
+                    @click="copyS3Uri(item.key)"
+                    aria-label="Salin S3 URI"
+                    title="Salin S3 URI (s3://bucket/key)"
+                    class="p-1.5 text-secondary hover:text-primary hover:bg-surface-raised rounded-lg hover:scale-105 active:scale-95 transition-all inline-flex items-center"
+                  >
+                    <AppIcon name="copy" class="w-3.5 h-3.5" />
+                  </button>
 
-                <button
-                  @click="presignKey = item.key"
-                  title="Bagikan Tautan Sementara (Presigned URL)"
-                  class="p-1.5 text-xs font-medium border border-subtle rounded-md hover:bg-surface-raised text-secondary hover:text-primary transition-colors inline-flex items-center"
-                >
-                  <AppIcon name="external" class="w-3.5 h-3.5" />
-                </button>
+                  <!-- Presign URL -->
+                  <button
+                    @click="presignKey = item.key"
+                    aria-label="Bagikan Tautan Sementara"
+                    title="Bagikan Tautan Sementara (Presigned URL)"
+                    class="p-1.5 text-secondary hover:text-primary hover:bg-surface-raised rounded-lg hover:scale-105 active:scale-95 transition-all inline-flex items-center"
+                  >
+                    <AppIcon name="share" class="w-3.5 h-3.5" />
+                  </button>
 
-                <a
-                  :href="`/api/buckets/${bucketId}/download?key=${encodeURIComponent(item.key)}`"
-                  target="_blank"
-                  title="Unduh File"
-                  class="p-1.5 text-xs font-medium border border-subtle rounded-md hover:bg-surface-raised text-secondary hover:text-primary transition-colors inline-flex items-center"
-                >
-                  <AppIcon name="download" class="w-3.5 h-3.5" />
-                </a>
+                  <!-- Download -->
+                  <a
+                    :href="`/api/buckets/${bucketId}/download?key=${encodeURIComponent(item.key)}`"
+                    target="_blank"
+                    aria-label="Unduh File"
+                    title="Unduh File"
+                    class="p-1.5 text-secondary hover:text-primary hover:bg-surface-raised rounded-lg hover:scale-105 active:scale-95 transition-all inline-flex items-center"
+                  >
+                    <AppIcon name="download" class="w-3.5 h-3.5" />
+                  </a>
 
-                <button
-                  @click="deleteObject(item.key)"
-                  title="Hapus Objek"
-                  class="p-1.5 text-xs font-medium border border-danger-border text-danger hover:bg-danger-bg rounded-md transition-colors inline-flex items-center"
-                >
-                  <AppIcon name="trash" class="w-3.5 h-3.5" />
-                </button>
+                  <!-- Delete -->
+                  <button
+                    @click="deleteObject(item.key)"
+                    aria-label="Hapus Objek"
+                    title="Hapus Objek"
+                    class="p-1.5 text-secondary hover:text-danger hover:bg-danger-bg rounded-lg hover:scale-105 active:scale-95 transition-all inline-flex items-center"
+                  >
+                    <AppIcon name="trash" class="w-3.5 h-3.5" />
+                  </button>
+                </div>
               </template>
 
               <template v-else>
                 <button
                   @click="deleteFolder(item.folderPrefix)"
+                  aria-label="Hapus Folder"
                   title="Hapus Penanda Folder"
-                  class="p-1.5 text-xs font-medium border border-subtle text-muted hover:text-danger hover:border-danger-border rounded-md transition-colors inline-flex items-center"
+                  class="p-1.5 text-secondary hover:text-danger hover:bg-danger-bg rounded-lg hover:scale-105 active:scale-95 transition-all inline-flex items-center"
                 >
                   <AppIcon name="trash" class="w-3.5 h-3.5" />
                 </button>
@@ -232,12 +244,16 @@
             </td>
           </tr>
 
-          <!-- Empty State -->
+          <!-- Dignified Empty State -->
           <tr v-if="filteredItems.length === 0">
-            <td colspan="6" class="py-12 text-center text-xs text-muted space-y-2">
-              <AppIcon name="folder" class="w-8 h-8 text-muted mx-auto opacity-40" />
-              <div>Tidak ada file atau folder dalam direktori ini.</div>
-              <div class="text-[11px] text-muted">Gunakan tombol "Unggah File" atau "Buat Folder" di atas.</div>
+            <td colspan="5" class="py-16 text-center">
+              <div class="max-w-xs mx-auto space-y-3">
+                <div class="w-10 h-10 rounded-xl bg-surface-raised border border-subtle flex items-center justify-center mx-auto text-muted">
+                  <AppIcon name="folder" class="w-5 h-5 opacity-60" />
+                </div>
+                <div class="text-xs text-secondary font-medium">Tidak ada file atau folder</div>
+                <p class="text-[11px] text-muted">Gunakan tombol "Unggah" di header atau tarik berkas ke dropzone.</p>
+              </div>
             </td>
           </tr>
         </tbody>
@@ -402,7 +418,6 @@ async function uploadFileObject(file: File) {
   const fullKey = `${currentPrefix.value}${file.name}`;
   const CHUNK_SIZE = 10 * 1024 * 1024; // 10MB chunk threshold
 
-  // Small files (<= 10MB): Direct streaming
   if (file.size <= CHUNK_SIZE) {
     const res = await fetch(`/api/buckets/${bucketId}/upload?key=${encodeURIComponent(fullKey)}`, {
       method: "POST",
@@ -421,7 +436,6 @@ async function uploadFileObject(file: File) {
   const totalParts = Math.ceil(file.size / CHUNK_SIZE);
   toast.info(`Mengunggah ${file.name} (${formatBytes(file.size)}) dalam ${totalParts} pecahan...`);
 
-  // 1. Initiate Multipart
   const initRes = await fetch(`/api/buckets/${bucketId}/multipart/initiate`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -438,7 +452,6 @@ async function uploadFileObject(file: File) {
 
   const { uploadId } = await initRes.json();
 
-  // 2. Upload Chunks
   try {
     for (let partNum = 1; partNum <= totalParts; partNum++) {
       const start = (partNum - 1) * CHUNK_SIZE;
@@ -462,7 +475,6 @@ async function uploadFileObject(file: File) {
       toast.info(`Progress ${file.name}: ${percent}% (${partNum}/${totalParts})`);
     }
 
-    // 3. Complete Multipart
     const compRes = await fetch(`/api/buckets/${bucketId}/multipart/complete`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -474,7 +486,6 @@ async function uploadFileObject(file: File) {
       throw new Error(err.error || "Gagal menyelesaikan multipart upload");
     }
   } catch (err) {
-    // Abort if failed
     await fetch(`/api/buckets/${bucketId}/multipart/abort`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
