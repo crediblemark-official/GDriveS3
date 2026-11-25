@@ -141,6 +141,20 @@ GDRIVES3_S3_PUBLIC_URL="https://s3.yourdomain.com"
 
 ### Deploying the Docker Image on Dokploy
 
+You can deploy the prebuilt image in two ways:
+
+#### Option A: Dokploy Compose (Auto-Mounts Volume & Declares Env Vars)
+
+1. Create a new **Compose** service in Dokploy from this GitHub repository and set **Compose Path** to:
+   ```text
+   docker-compose.dokploy.yml
+   ```
+   *(Or paste the contents of `docker-compose.dokploy.yml` into **Raw Compose**.)*
+2. Dokploy will automatically pull `ghcr.io/crediblemark-official/gdrives3:latest` and create/mount the persistent `gdrives3_data` volume at `/var/lib/gdrives3-data`.
+3. Open **Environment** and fill in your credentials (`GDRIVES3_ADMIN_EMAIL`, `GDRIVES3_ADMIN_PASSWORD`, `GDRIVES3_ENCRYPTION_KEY`, `GDRIVES3_GOOGLE_CLIENT_ID`, `GDRIVES3_GOOGLE_CLIENT_SECRET`, `GDRIVES3_GOOGLE_REDIRECT_URI`, `GDRIVES3_S3_PUBLIC_URL`).
+
+#### Option B: Dokploy Application (Docker Provider)
+
 1. Create a new **Application** in Dokploy and select **Docker** as the provider.
 2. Set **Docker Image** to:
    ```text
@@ -155,8 +169,7 @@ GDRIVES3_S3_PUBLIC_URL="https://s3.yourdomain.com"
    - `GDRIVES3_GOOGLE_CLIENT_SECRET`: Google OAuth Client Secret
    - `GDRIVES3_GOOGLE_REDIRECT_URI`: `https://panel.yourdomain.com/api/accounts/callback`
    - `GDRIVES3_S3_PUBLIC_URL`: `https://s3.yourdomain.com`
-4. Add a **Persistent Volume** under **Advanced → Mounts → Volume Mount**:
-   - **Mount Path**: `/var/lib/gdrives3-data` (keeps `gdrives3.db`, `.enckey`, and `vps-fallback/` across redeployments).
+4. The Dockerfile declares `VOLUME ["/var/lib/gdrives3-data"]`, and it is still recommended to add an explicit named **Volume Mount** under **Advanced → Mounts → Volume Mount** pointing to `/var/lib/gdrives3-data`.
 5. Add **two Domains** under **Domains**:
    - `panel.yourdomain.com` → Container Port `8787` (HTTPS enabled)
    - `s3.yourdomain.com` → Container Port `9000` (HTTPS enabled)

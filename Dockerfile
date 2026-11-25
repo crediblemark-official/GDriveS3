@@ -16,9 +16,13 @@ ENV GDRIVES3_DATA_DIR=/var/lib/gdrives3-data
 ENV GDRIVES3_HOST=0.0.0.0
 ENV GDRIVES3_PORT=8787
 ENV GDRIVES3_S3_PORT=9000
+ENV GDRIVES3_ADMIN_EMAIL=admin@gdrives3.local
+ENV GDRIVES3_ADMIN_PASSWORD=change-me-now
+ENV GDRIVES3_GOOGLE_REDIRECT_URI=http://localhost:8787/api/accounts/callback
 ENV NODE_ENV=production
 
 RUN mkdir -p /var/lib/gdrives3-data
+VOLUME ["/var/lib/gdrives3-data"]
 
 EXPOSE 8787 9000
 

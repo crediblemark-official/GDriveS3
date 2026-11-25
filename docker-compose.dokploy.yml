@@ -1,0 +1,27 @@
+services:
+  gdrives3:
+    image: ghcr.io/crediblemark-official/gdrives3:latest
+    restart: unless-stopped
+    ports:
+      - "8787:8787" # Admin Web Panel & REST API
+      - "9000:9000" # AWS S3-compatible API
+    environment:
+      - NODE_ENV=production
+      - GDRIVES3_HOST=0.0.0.0
+      - GDRIVES3_PORT=8787
+      - GDRIVES3_S3_PORT=9000
+      - GDRIVES3_DATA_DIR=/var/lib/gdrives3-data
+      - GDRIVES3_ADMIN_EMAIL=${GDRIVES3_ADMIN_EMAIL:-admin@gdrives3.local}
+      - GDRIVES3_ADMIN_PASSWORD=${GDRIVES3_ADMIN_PASSWORD:-change-me-now}
+      - GDRIVES3_ENCRYPTION_KEY=${GDRIVES3_ENCRYPTION_KEY:-}
+      - GDRIVES3_GOOGLE_CLIENT_ID=${GDRIVES3_GOOGLE_CLIENT_ID:-}
+      - GDRIVES3_GOOGLE_CLIENT_SECRET=${GDRIVES3_GOOGLE_CLIENT_SECRET:-}
+      - GDRIVES3_GOOGLE_REDIRECT_URI=${GDRIVES3_GOOGLE_REDIRECT_URI:-http://localhost:8787/api/accounts/callback}
+      - GDRIVES3_S3_PUBLIC_URL=${GDRIVES3_S3_PUBLIC_URL:-}
+      - GDRIVES3_COOKIE_SECURE=${GDRIVES3_COOKIE_SECURE:-}
+    volumes:
+      - gdrives3_data:/var/lib/gdrives3-data
+
+volumes:
+  gdrives3_data:
+    driver: local
