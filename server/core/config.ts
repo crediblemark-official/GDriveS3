@@ -36,25 +36,33 @@ export function loadConfig(): AppConfig {
   }
 
   const getEnv = (k: string, fallback: string = "") => process.env[k] || fileEnv[k] || fallback;
+  const getCompatEnv = (primary: string, legacy: string, fallback: string = "") =>
+    getEnv(primary) || getEnv(legacy) || fallback;
 
-  const dataDir = getEnv("GDRIVES3_DATA_DIR", "./gdrives3-data");
+  const dataDir = getCompatEnv("GDRIVES3_DATA_DIR", "G3_DATA_DIR", "./gdrives3-data");
   if (!existsSync(dataDir)) {
     mkdirSync(dataDir, { recursive: true });
   }
 
   return {
-    port: Number(getEnv("GDRIVES3_PORT", getEnv("PORT", "8787"))),
-    s3Port: Number(getEnv("GDRIVES3_S3_PORT", "9000")),
-    s3PublicUrl: getEnv("GDRIVES3_S3_PUBLIC_URL", "").replace(/\/+$/, ""),
-    host: getEnv("GDRIVES3_HOST", "0.0.0.0"),
+    port: Number(getCompatEnv("GDRIVES3_PORT", "G3_PORT", getEnv("PORT", "8787"))),
+    s3Port: Number(getCompatEnv("GDRIVES3_S3_PORT", "G3_S3_PORT", "9000")),
+    s3PublicUrl: getCompatEnv("GDRIVES3_S3_PUBLIC_URL", "G3_S3_PUBLIC_URL", "").replace(/\/+$/, ""),
+    host: getCompatEnv("GDRIVES3_HOST", "G3_HOST", "0.0.0.0"),
     dataDir,
-    adminEmail: getEnv("GDRIVES3_ADMIN_EMAIL", "admin@gdrives3.local"),
-    adminPassword: getEnv("GDRIVES3_ADMIN_PASSWORD", "change-me-now"),
-    encryptionKey: getEnv("GDRIVES3_ENCRYPTION_KEY", ""),
-    googleClientId: getEnv("GDRIVES3_GOOGLE_CLIENT_ID", ""),
-    googleClientSecret: getEnv("GDRIVES3_GOOGLE_CLIENT_SECRET", ""),
-    googleRedirectUri: getEnv("GDRIVES3_GOOGLE_REDIRECT_URI", "http://localhost:8787/api/accounts/callback"),
-    isDev: process.env.NODE_ENV !== "production" && getEnv("GDRIVES3_DEV", "true") !== "false",
+    adminEmail: getCompatEnv("GDRIVES3_ADMIN_EMAIL", "G3_ADMIN_EMAIL", "admin@gdrives3.local"),
+    adminPassword: getCompatEnv("GDRIVES3_ADMIN_PASSWORD", "G3_ADMIN_PASSWORD", "change-me-now"),
+    encryptionKey: getCompatEnv("GDRIVES3_ENCRYPTION_KEY", "G3_ENCRYPTION_KEY", ""),
+    googleClientId: getCompatEnv("GDRIVES3_GOOGLE_CLIENT_ID", "G3_GOOGLE_CLIENT_ID", ""),
+    googleClientSecret: getCompatEnv("GDRIVES3_GOOGLE_CLIENT_SECRET", "G3_GOOGLE_CLIENT_SECRET", ""),
+    googleRedirectUri: getCompatEnv(
+      "GDRIVES3_GOOGLE_REDIRECT_URI",
+      "G3_GOOGLE_REDIRECT_URI",
+      "http://localhost:8787/api/accounts/callback"
+    ),
+    isDev:
+      process.env.NODE_ENV !== "production" &&
+      getCompatEnv("GDRIVES3_DEV", "G3_DEV", "true") !== "false",
   };
 }
 
@@ -67,10 +75,17 @@ export function resolveS3Endpoint(
   s3PublicUrl?: string,
   s3Port?: number
 ): string {
-  const configured = (s3PublicUrl || process.env.GDRIVES3_S3_PUBLIC_URL || "").trim().replace(/\/+$/, "");
+  const configured = (
+    s3PublicUrl ||
+    process.env.GDRIVES3_S3_PUBLIC_URL ||
+    process.env.G3_S3_PUBLIC_URL ||
+    ""
+  )
+    .trim()
+    .replace(/\/+$/, "");
   if (configured) return configured;
 
-  const port = s3Port || Number(process.env.GDRIVES3_S3_PORT || 9000);
+  const port = s3Port || Number(process.env.GDRIVES3_S3_PORT || process.env.G3_S3_PORT || 9000);
   const proto = request.headers.get("x-forwarded-proto") || new URL(request.url).protocol.replace(":", "") || "http";
   const rawHost = request.headers.get("x-forwarded-host") || request.headers.get("host") || "";
 
@@ -82,8 +97,11 @@ export function resolveS3Endpoint(
     } else {
       hostname = rawHost.split(":")[0] || "localhost";
     }
-  } else if (process.env.GDRIVES3_HOST && process.env.GDRIVES3_HOST !== "0.0.0.0") {
-    hostname = process.env.GDRIVES3_HOST;
+  } else {
+    const envHost = process.env.GDRIVES3_HOST || process.env.G3_HOST;
+    if (envHost && envHost !== "0.0.0.0") {
+      hostname = envHost;
+    }
   }
 
   if (hostname === "0.0.0.0") hostname = "localhost";
