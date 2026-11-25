@@ -139,6 +139,29 @@ GDRIVES3_GOOGLE_REDIRECT_URI="https://panel.yourdomain.com/api/accounts/callback
 GDRIVES3_S3_PUBLIC_URL="https://s3.yourdomain.com"
 ```
 
+### Deploying the Docker Image on Dokploy
+
+1. Create a new **Application** in Dokploy and select **Docker** as the provider.
+2. Set **Docker Image** to:
+   ```text
+   ghcr.io/crediblemark-official/gdrives3:latest
+   ```
+   *(If the GHCR package is private, add your GitHub Container Registry credentials in Dokploy **Settings → Registry** first.)*
+3. Configure **Environment Variables** in Dokploy:
+   - `GDRIVES3_ADMIN_EMAIL`: your admin email
+   - `GDRIVES3_ADMIN_PASSWORD`: a strong password
+   - `GDRIVES3_ENCRYPTION_KEY`: output of `openssl rand -base64 32`
+   - `GDRIVES3_GOOGLE_CLIENT_ID`: Google OAuth Client ID
+   - `GDRIVES3_GOOGLE_CLIENT_SECRET`: Google OAuth Client Secret
+   - `GDRIVES3_GOOGLE_REDIRECT_URI`: `https://panel.yourdomain.com/api/accounts/callback`
+   - `GDRIVES3_S3_PUBLIC_URL`: `https://s3.yourdomain.com`
+4. Add a **Persistent Volume** under **Advanced → Mounts → Volume Mount**:
+   - **Mount Path**: `/var/lib/gdrives3-data` (keeps `gdrives3.db`, `.enckey`, and `vps-fallback/` across redeployments).
+5. Add **two Domains** under **Domains**:
+   - `panel.yourdomain.com` → Container Port `8787` (HTTPS enabled)
+   - `s3.yourdomain.com` → Container Port `9000` (HTTPS enabled)
+6. Deploy and verify `https://panel.yourdomain.com/api/health` returns `{"ok":true,"status":"healthy"}`.
+
 ---
 
 ## 6. Database Persistence & Backups (SQLite)

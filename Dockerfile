@@ -22,4 +22,7 @@ RUN mkdir -p /var/lib/gdrives3-data
 
 EXPOSE 8787 9000
 
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD bun -e "fetch('http://127.0.0.1:8787/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+
 CMD ["bun", "server/index.ts"]

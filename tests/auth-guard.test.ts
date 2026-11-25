@@ -28,7 +28,11 @@ describe("API Session Auth Guard", () => {
     rmSync(tempDir, { recursive: true, force: true });
   });
 
-  it("should block unauthenticated access to protected /api/* routes with 401", async () => {
+  it("should expose public /api/health and block protected /api/* routes with 401", async () => {
+    const healthRes = await api.handle(new Request("http://localhost/api/health"));
+    expect(healthRes.status).toBe(200);
+    expect(await healthRes.json()).toEqual({ ok: true, status: "healthy" });
+
     const keysRes = await api.handle(new Request("http://localhost/api/keys"));
     expect(keysRes.status).toBe(401);
 

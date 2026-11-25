@@ -14,6 +14,7 @@ import { createSettingsRoutes } from "./settings";
 import { createLogsRoutes } from "./logs";
 
 const PUBLIC_API_PATHS = new Set([
+  "/api/health",
   "/api/auth/login",
   "/api/auth/logout",
   "/api/accounts/callback",
@@ -43,6 +44,7 @@ export function createApiRouter(
         return { error: "Session expired" };
       }
     })
+    .get("/health", () => ({ ok: true, status: "healthy" }))
     .use(createAuthRoutes(db))
     .use(createAccountsRoutes(db, oauth, cipher))
     .use(createBucketsRoutes(db, cipher, engine, opts))
