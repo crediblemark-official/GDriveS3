@@ -1,8 +1,16 @@
 import { Database } from "bun:sqlite";
 import { drizzle } from "drizzle-orm/bun-sqlite";
 import { join } from "node:path";
-import { eq } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 import * as schema from "./schema";
+
+const DEFAULT_ADMIN_EMAIL = "admin@gdrives3.local";
+const DEFAULT_ADMIN_PASSWORD = "change-me-now";
+const ADMIN_SYNC_SETTING_KEY = "admin_env_sync_signature";
+
+function computeAdminSyncSignature(email: string, password: string): string {
+  return new Bun.CryptoHasher("sha256").update(`${email}\0${password}`).digest("hex");
+}
 
 export function initDatabase(dataDir: string, adminEmail: string, adminPassword: string) {
   const dbPath = join(dataDir, "gdrives3.db");
@@ -148,22 +156,75 @@ export function initDatabase(dataDir: string, adminEmail: string, adminPassword:
   }
   sqlite.run("CREATE UNIQUE INDEX IF NOT EXISTS idx_objects_bucket_key ON objects(bucket_id, object_key);");
 
-  // Seed Admin jika belum ada user
-  const existing = db.select().from(schema.users).all();
+  // Seed atau sinkronkan akun Admin jika env berubah
+  const normalizedEmail = (adminEmail || DEFAULT_ADMIN_EMAIL).trim();
+  const effectivePassword = adminPassword || DEFAULT_ADMIN_PASSWORD;
+  const currentSig = computeAdminSyncSignature(normalizedEmail, effectivePassword);
+  const mustChange = effectivePassword === DEFAULT_ADMIN_PASSWORD ? 1 : 0;
+  const now = new Date().toISOString();
+
+  const existing = db
+    .select()
+    .from(schema.users)
+    .orderBy(asc(schema.users.createdAt))
+    .all();
+
   if (existing.length === 0) {
-    const passwordHash = Bun.password.hashSync(adminPassword);
-    const now = new Date().toISOString();
+    const passwordHash = Bun.password.hashSync(effectivePassword);
     db.insert(schema.users).values({
       id: crypto.randomUUID(),
-      email: adminEmail,
+      email: normalizedEmail,
       name: "Administrator",
       passwordHash,
-      mustChangePassword: 1,
+      mustChangePassword: mustChange,
       role: "admin",
       createdAt: now,
       updatedAt: now,
     }).run();
-    console.log(`[gdrives3-db] Seeded initial admin account: ${adminEmail}`);
+    db.insert(schema.systemSettings)
+      .values({ key: ADMIN_SYNC_SETTING_KEY, value: currentSig })
+      .onConflictDoUpdate({ target: schema.systemSettings.key, set: { value: currentSig } })
+      .run();
+    console.log(`[gdrives3-db] Seeded initial admin account: ${normalizedEmail}`);
+  } else {
+    const savedSigRow = db
+      .select()
+      .from(schema.systemSettings)
+      .where(eq(schema.systemSettings.key, ADMIN_SYNC_SETTING_KEY))
+      .get();
+
+    const isDefaultEnv =
+      normalizedEmail === DEFAULT_ADMIN_EMAIL && effectivePassword === DEFAULT_ADMIN_PASSWORD;
+    const shouldSync = savedSigRow
+      ? savedSigRow.value !== currentSig
+      : !isDefaultEnv;
+
+    if (shouldSync) {
+      const targetUser =
+        existing.find((u) => u.email === normalizedEmail) ||
+        existing.find((u) => u.role === "admin") ||
+        existing[0];
+
+      db.update(schema.users)
+        .set({
+          email: normalizedEmail,
+          passwordHash: Bun.password.hashSync(effectivePassword),
+          mustChangePassword: mustChange,
+          updatedAt: now,
+        })
+        .where(eq(schema.users.id, targetUser.id))
+        .run();
+
+      db.delete(schema.sessions).where(eq(schema.sessions.userId, targetUser.id)).run();
+      console.log(`[gdrives3-db] Synced admin credentials from environment: ${normalizedEmail}`);
+    }
+
+    if (!savedSigRow || savedSigRow.value !== currentSig) {
+      db.insert(schema.systemSettings)
+        .values({ key: ADMIN_SYNC_SETTING_KEY, value: currentSig })
+        .onConflictDoUpdate({ target: schema.systemSettings.key, set: { value: currentSig } })
+        .run();
+    }
   }
 
   return { db, sqlite };
