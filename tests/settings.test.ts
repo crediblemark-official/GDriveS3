@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { initDatabase } from "../server/db/client";
 import { validateWebhookUrl, getWebhookConfig, saveWebhookConfig } from "../server/core/webhook";
 import { getS3CorsConfig, saveS3CorsConfig } from "../server/core/corsConfig";
+import { getLocalFallbackConfig, saveLocalFallbackConfig } from "../server/core/fallbackConfig";
 
 describe("Webhook & S3 CORS Settings", () => {
   let tempDir: string;
@@ -55,5 +56,23 @@ describe("Webhook & S3 CORS Settings", () => {
     expect(loaded.allowedOrigins).toEqual(["https://app.example.com"]);
     expect(loaded.allowedMethods).toEqual(["GET", "PUT"]);
     expect(loaded.maxAgeSeconds).toBe(7200);
+  });
+
+  it("should persist local VPS fallback policy in SQLite system_settings", () => {
+    const defaults = getLocalFallbackConfig(db);
+    expect(defaults.enabled).toBe(true);
+    expect(defaults.autoSyncToDrive).toBe(true);
+
+    saveLocalFallbackConfig(db, {
+      enabled: true,
+      maxMb: 2048,
+      autoSyncToDrive: false,
+      notifyOnFallback: true,
+    });
+    const loaded = getLocalFallbackConfig(db);
+    expect(loaded.enabled).toBe(true);
+    expect(loaded.maxMb).toBe(2048);
+    expect(loaded.autoSyncToDrive).toBe(false);
+    expect(loaded.notifyOnFallback).toBe(true);
   });
 });

@@ -158,7 +158,7 @@
           </button>
         </div>
 
-        <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px] font-mono">
+        <div class="grid grid-cols-2 sm:grid-cols-5 gap-2 text-[11px] font-mono">
           <div class="p-2 bg-canvas border border-subtle rounded-lg">
             <div class="text-muted">Req Drive</div>
             <div class="font-bold text-primary mt-0.5">{{ stats.driveTelemetry?.totalRequests ?? 0 }}</div>
@@ -179,6 +179,15 @@
               {{ stats.pendingDeletesCount ?? 0 }}
             </div>
           </div>
+          <RouterLink
+            to="/settings"
+            class="p-2 bg-canvas border border-subtle rounded-lg hover:bg-surface-raised transition-colors col-span-2 sm:col-span-1"
+          >
+            <div class="text-muted">Fallback VPS</div>
+            <div class="font-bold mt-0.5" :class="stats.localFallbackCount > 0 ? 'text-warning' : 'text-primary'">
+              {{ stats.localFallbackCount ?? 0 }} ({{ formatBytes(stats.localFallbackBytes || 0) }})
+            </div>
+          </RouterLink>
         </div>
       </div>
     </div>
@@ -269,6 +278,9 @@ const stats = ref({
   totalStorageUsage: 0,
   totalObjectBytes: 0,
   pendingDeletesCount: 0,
+  localFallbackCount: 0,
+  localFallbackBytes: 0,
+  localFallbackEnabled: true,
   driveTelemetry: {
     totalRequests: 0,
     rateLimitHits: 0,

@@ -4,6 +4,7 @@ import { loadConfig } from "./core/config";
 import { TokenCipher } from "./core/crypto";
 import { logger, createHttpLogger } from "./core/logger";
 import { getS3CorsConfig } from "./core/corsConfig";
+import { getLocalFallbackConfig } from "./core/fallbackConfig";
 import { initDatabase } from "./db/client";
 import * as schema from "./db/schema";
 import { GoogleOAuth } from "./drive/oauth";
@@ -32,7 +33,7 @@ async function main() {
   );
 
   const balancer = new Balancer(db, oauth, cipher);
-  const s3Engine = new S3Engine(db, balancer, oauth, cipher);
+  const s3Engine = new S3Engine(db, balancer, oauth, cipher, config.dataDir);
 
   // Ambil metadata storage pool & strategi penyeimbang untuk banner
   const activeAccounts = db
@@ -141,6 +142,13 @@ async function main() {
       const retried = await s3Engine.retryPendingDeletes();
       if (retried.succeeded > 0) {
         logger.info("sweeper", `Menghapus ulang ${retried.succeeded} file tertunda dari Google Drive`);
+      }
+      const fallbackCfg = getLocalFallbackConfig(db);
+      if (fallbackCfg.autoSyncToDrive) {
+        const synced = await s3Engine.syncLocalFallbackToDrive();
+        if (synced.migrated > 0) {
+          logger.info("sweeper", `Memigrasikan ${synced.migrated} objek fallback VPS ke Google Drive`);
+        }
       }
     } catch (err) {
       logger.error("sweeper", "Gagal menjalankan pembersihan multipart/Drive", err);

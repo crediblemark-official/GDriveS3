@@ -20,6 +20,11 @@ import {
   saveS3CorsConfig,
   type S3CorsConfig,
 } from "../core/corsConfig";
+import {
+  getLocalFallbackConfig,
+  saveLocalFallbackConfig,
+  type LocalFallbackConfig,
+} from "../core/fallbackConfig";
 import { resolveS3Endpoint } from "../core/config";
 
 export function createSettingsRoutes(
@@ -47,6 +52,8 @@ export function createSettingsRoutes(
 
     const totalStorageLimit = accounts.reduce((acc, a) => acc + (a.storageLimit || 0), 0);
     const totalStorageUsage = accounts.reduce((acc, a) => acc + (a.storageUsage || 0), 0);
+    const fallbackStats = engine.getLocalFallbackStats();
+    const fallbackConfig = getLocalFallbackConfig(db);
 
     return {
       accountsCount: accounts.length,
@@ -56,6 +63,9 @@ export function createSettingsRoutes(
       totalStorageUsage,
       totalObjectBytes: Number(objAggRow?.totalBytes || 0),
       pendingDeletesCount: Number(pendingDeletesRow?.count || 0),
+      localFallbackCount: fallbackStats.objectsCount,
+      localFallbackBytes: fallbackStats.totalBytes,
+      localFallbackEnabled: fallbackConfig.enabled,
       driveTelemetry: DriveClient.getTelemetry(),
       s3Endpoint: resolveS3Endpoint(request, opts?.s3PublicUrl, opts?.s3Port),
       accounts: accounts.map((a) => ({
@@ -90,6 +100,34 @@ export function createSettingsRoutes(
 
   router.post("/storage/pending-deletes/retry", async () => {
     const res = await engine.retryPendingDeletes();
+    return { success: true, ...res };
+  });
+
+  // VPS Fallback Storage Config, Stats & Sync to Drive
+  router.get("/storage/fallback", async () => {
+    return {
+      config: getLocalFallbackConfig(db),
+      stats: engine.getLocalFallbackStats(),
+    };
+  });
+
+  router.put("/settings/fallback", async ({ body }) => {
+    const payload = (body as Partial<LocalFallbackConfig>) || {};
+    const current = getLocalFallbackConfig(db);
+    const next: LocalFallbackConfig = {
+      enabled: payload.enabled !== undefined ? Boolean(payload.enabled) : current.enabled,
+      maxMb: payload.maxMb !== undefined ? Math.max(0, Math.floor(Number(payload.maxMb) || 0)) : current.maxMb,
+      autoSyncToDrive:
+        payload.autoSyncToDrive !== undefined ? Boolean(payload.autoSyncToDrive) : current.autoSyncToDrive,
+      notifyOnFallback:
+        payload.notifyOnFallback !== undefined ? Boolean(payload.notifyOnFallback) : current.notifyOnFallback,
+    };
+    saveLocalFallbackConfig(db, next);
+    return { success: true, config: next };
+  });
+
+  router.post("/storage/fallback/sync", async () => {
+    const res = await engine.syncLocalFallbackToDrive();
     return { success: true, ...res };
   });
 

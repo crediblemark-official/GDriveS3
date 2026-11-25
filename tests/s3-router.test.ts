@@ -111,6 +111,7 @@ describe("S3 Router & Engine Integration", () => {
   const driveFiles = new Map<string, Uint8Array>();
   let fileSeq = 1;
   let failDeletes = false;
+  let failUploads = false;
   let return429Once = false;
   const originalFetch = globalThis.fetch;
 
@@ -123,7 +124,7 @@ describe("S3 Router & Engine Integration", () => {
     const cipher = await TokenCipher.init(encKey, tempDir);
     const oauth = new GoogleOAuth("cid", "csec", "http://localhost:8787/api/accounts/callback");
     const balancer = new Balancer(db, oauth, cipher);
-    const engine = new S3Engine(db, balancer, oauth, cipher);
+    const engine = new S3Engine(db, balancer, oauth, cipher, tempDir);
 
     s3Router = createS3Router(db, engine, cipher);
     apiRouter = createApiRouter(db, oauth, cipher, engine, { s3Port: 9000 });
@@ -213,6 +214,12 @@ describe("S3 Router & Engine Integration", () => {
       }
 
       if (url === "https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable") {
+        if (failUploads) {
+          return new Response(JSON.stringify({ error: { message: "Drive upload unavailable" } }), {
+            status: 500,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
         if (return429Once) {
           return429Once = false;
           return new Response("Rate limit", { status: 429, headers: { "Retry-After": "0" } });
@@ -569,5 +576,133 @@ describe("S3 Router & Engine Integration", () => {
     expect(backupRes.headers.get("content-type")).toBe("application/x-sqlite3");
     const headerStr = new TextDecoder().decode(new Uint8Array(await backupRes.arrayBuffer()).subarray(0, 15));
     expect(headerStr).toBe("SQLite format 3");
+  });
+
+  it("should fallback to VPS local storage when Drive upload fails and migrate back to Drive on sync", async () => {
+    // 1. Force Google Drive upload failures
+    failUploads = true;
+    const putReq = await signRequest(
+      "PUT",
+      "http://localhost:9000/test-bucket/fallback.txt",
+      accessKeyId,
+      secretKey,
+      "vps-fallback-payload",
+      { "Content-Type": "text/plain" }
+    );
+    const putRes = await s3Router.handle(putReq);
+    expect(putRes.status).toBe(200);
+
+    // 2. Read full object and byte-range directly from VPS fallback disk
+    const getReq = await signRequest(
+      "GET",
+      "http://localhost:9000/test-bucket/fallback.txt",
+      accessKeyId,
+      secretKey
+    );
+    const getRes = await s3Router.handle(getReq);
+    expect(getRes.status).toBe(200);
+    expect(await getRes.text()).toBe("vps-fallback-payload");
+
+    const rangeReq = await signRequest(
+      "GET",
+      "http://localhost:9000/test-bucket/fallback.txt",
+      accessKeyId,
+      secretKey,
+      "",
+      { Range: "bytes=0-3" }
+    );
+    const rangeRes = await s3Router.handle(rangeReq);
+    expect(rangeRes.status).toBe(206);
+    expect(await rangeRes.text()).toBe("vps-");
+
+    // 3. CopyObject while Drive is down also writes copy to VPS fallback
+    const copyReq = await signRequest(
+      "PUT",
+      "http://localhost:9000/test-bucket/fallback-copy.txt",
+      accessKeyId,
+      secretKey,
+      "",
+      { "x-amz-copy-source": "/test-bucket/fallback.txt" }
+    );
+    const copyRes = await s3Router.handle(copyReq);
+    expect(copyRes.status).toBe(200);
+
+    // 4. Inspect fallback stats via panel API
+    const fbRes = await apiRouter.handle(
+      new Request("http://localhost:8787/api/storage/fallback", {
+        headers: { Cookie: sessionCookie },
+      })
+    );
+    expect(fbRes.status).toBe(200);
+    const fbData = (await fbRes.json()) as {
+      stats: { objectsCount: number; totalBytes: number };
+    };
+    expect(fbData.stats.objectsCount).toBe(2);
+    expect(fbData.stats.totalBytes).toBe(40);
+
+    // 5. Disabling fallback causes Drive failures to return 500
+    const disableRes = await apiRouter.handle(
+      new Request("http://localhost:8787/api/settings/fallback", {
+        method: "PUT",
+        headers: { Cookie: sessionCookie, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          enabled: false,
+          maxMb: 0,
+          autoSyncToDrive: true,
+          notifyOnFallback: true,
+        }),
+      })
+    );
+    expect(disableRes.status).toBe(200);
+
+    const rejectedReq = await signRequest(
+      "PUT",
+      "http://localhost:9000/test-bucket/rejected.txt",
+      accessKeyId,
+      secretKey,
+      "should-fail",
+      { "Content-Type": "text/plain" }
+    );
+    const rejectedRes = await s3Router.handle(rejectedReq);
+    expect(rejectedRes.status).toBe(500);
+
+    // Re-enable fallback and recover Drive
+    await apiRouter.handle(
+      new Request("http://localhost:8787/api/settings/fallback", {
+        method: "PUT",
+        headers: { Cookie: sessionCookie, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          enabled: true,
+          maxMb: 0,
+          autoSyncToDrive: true,
+          notifyOnFallback: true,
+        }),
+      })
+    );
+    failUploads = false;
+
+    // 6. Sync VPS fallback objects back to Google Drive
+    const syncRes = await apiRouter.handle(
+      new Request("http://localhost:8787/api/storage/fallback/sync", {
+        method: "POST",
+        headers: { Cookie: sessionCookie },
+      })
+    );
+    expect(syncRes.status).toBe(200);
+    const syncData = (await syncRes.json()) as { migrated: number; failed: number; remaining: number };
+    expect(syncData.migrated).toBe(2);
+    expect(syncData.failed).toBe(0);
+    expect(syncData.remaining).toBe(0);
+
+    // 7. Verify object is now readable from Google Drive
+    const afterSyncReq = await signRequest(
+      "GET",
+      "http://localhost:9000/test-bucket/fallback.txt",
+      accessKeyId,
+      secretKey
+    );
+    const afterSyncRes = await s3Router.handle(afterSyncReq);
+    expect(afterSyncRes.status).toBe(200);
+    expect(await afterSyncRes.text()).toBe("vps-fallback-payload");
   });
 });

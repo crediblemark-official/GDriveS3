@@ -7,14 +7,21 @@ import {
   multipartParts,
   type ManifestPart,
 } from "../db/schema";
-import type { Balancer } from "../drive/balancer";
-import { DriveClient } from "../drive/client";
+
+export type UploadPayloadFn = (params: {
+  bucketName: string;
+  objectKey: string;
+  driveFileName: string;
+  contentType: string;
+  body: ReadableStream;
+  expectedSha256?: string;
+}) => Promise<{ accountId: string; driveFileId: string; size: number; etag: string }>;
 
 export class MultipartEngine {
   constructor(
     private db: AppDatabase,
-    private balancer: Balancer,
-    private deleteDriveFile: (accountId: string, driveFileId: string) => Promise<void>
+    private deleteDriveFile: (accountId: string, driveFileId: string) => Promise<void>,
+    private uploadPayload: UploadPayloadFn
   ) {}
 
   async initiate(
@@ -58,47 +65,15 @@ export class MultipartEngine {
     const bucket = this.db.select().from(buckets).where(eq(buckets.id, upload.bucketId)).get();
     if (!bucket) throw new Error("NoSuchBucket");
 
-    const { account, accessToken } = await this.balancer.pickAccount(upload.objectKey);
-    const rootFolderId = account.folderId || "";
-    const bucketFolderId = await DriveClient.ensureSubfolder(
-      accessToken,
-      bucket.name,
-      rootFolderId
-    );
-
-    const hasher = new Bun.CryptoHasher("md5");
-    const shaHasher = expectedSha256 ? new Bun.CryptoHasher("sha256") : null;
-    let partBytes = 0;
-
-    const transformStream = new TransformStream<Uint8Array, Uint8Array>({
-      transform(chunk, controller) {
-        hasher.update(chunk);
-        if (shaHasher) shaHasher.update(chunk);
-        partBytes += chunk.byteLength;
-        controller.enqueue(chunk);
-      },
-    });
-
-    const countingStream = body.pipeThrough(transformStream);
     const partFileName = `part-${uploadId}-${partNumber}`;
-
-    const driveFileId = await DriveClient.uploadStream(
-      accessToken,
-      bucketFolderId || rootFolderId,
-      partFileName,
-      "application/octet-stream",
-      countingStream
-    );
-
-    if (expectedSha256 && shaHasher) {
-      const actualSha = shaHasher.digest("hex");
-      if (actualSha !== expectedSha256.toLowerCase()) {
-        await this.deleteDriveFile(account.id, driveFileId).catch(() => {});
-        throw new Error("XAmzContentSHA256Mismatch");
-      }
-    }
-
-    const etag = hasher.digest("hex");
+    const uploaded = await this.uploadPayload({
+      bucketName: bucket.name,
+      objectKey: upload.objectKey,
+      driveFileName: partFileName,
+      contentType: "application/octet-stream",
+      body,
+      expectedSha256,
+    });
 
     // Ganti part lama jika partNumber diunggah ulang
     const existingPart = this.db
@@ -117,15 +92,14 @@ export class MultipartEngine {
         id: crypto.randomUUID(),
         uploadId,
         partNumber,
-        accountId: account.id,
-        driveFileId,
-        size: partBytes,
-        etag,
+        accountId: uploaded.accountId,
+        driveFileId: uploaded.driveFileId,
+        size: uploaded.size,
+        etag: uploaded.etag,
       })
       .run();
 
-    this.balancer.recordUsage(account.id, partBytes);
-    return { etag };
+    return { etag: uploaded.etag };
   }
 
   async complete(

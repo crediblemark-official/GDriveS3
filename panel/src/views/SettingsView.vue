@@ -278,6 +278,61 @@
         </div>
 
         <div class="space-y-2.5 text-xs text-secondary leading-relaxed">
+          <!-- VPS Fallback Storage Control -->
+          <div class="p-3.5 bg-canvas border border-subtle rounded-xl space-y-3">
+            <div class="flex items-center justify-between gap-2">
+              <div>
+                <div class="font-semibold text-primary">Penyimpanan Fallback VPS</div>
+                <p class="text-[11px] text-muted">Simpan sementara di disk VPS bila semua akun Drive penuh/error.</p>
+              </div>
+              <label class="inline-flex items-center gap-1.5 cursor-pointer font-mono text-xs">
+                <input
+                  v-model="fallbackCfg.enabled"
+                  type="checkbox"
+                  class="w-4 h-4 rounded border-subtle accent-neutral-900 dark:accent-white"
+                />
+                <span class="text-primary">{{ fallbackCfg.enabled ? "Aktif" : "Mati" }}</span>
+              </label>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-[11px]">
+              <div class="space-y-1">
+                <label class="font-semibold text-secondary">Batas Kuota VPS (MB, 0 = tak terbatas)</label>
+                <input
+                  v-model.number="fallbackCfg.maxMb"
+                  type="number"
+                  min="0"
+                  class="w-full px-2.5 py-1.5 bg-surface border border-subtle rounded-lg font-mono text-primary focus:outline-none focus:border-border-strong"
+                />
+              </div>
+              <div class="flex flex-col justify-end space-y-1.5">
+                <label class="flex items-center gap-2 cursor-pointer text-secondary">
+                  <input v-model="fallbackCfg.autoSyncToDrive" type="checkbox" class="w-3.5 h-3.5 accent-neutral-900 dark:accent-white" />
+                  <span>Auto-migrasi ke Drive tiap 1 jam</span>
+                </label>
+                <label class="flex items-center gap-2 cursor-pointer text-secondary">
+                  <input v-model="fallbackCfg.notifyOnFallback" type="checkbox" class="w-3.5 h-3.5 accent-neutral-900 dark:accent-white" />
+                  <span>Kirim alert webhook saat fallback</span>
+                </label>
+              </div>
+            </div>
+
+            <div class="pt-2 border-t border-subtle flex items-center justify-between gap-2 text-[11px] font-mono">
+              <span class="text-secondary">
+                Tersimpan di VPS: <strong class="text-primary">{{ fallbackStats.objectsCount }}</strong> objek ({{ formatBytes(fallbackStats.totalBytes) }})
+              </span>
+              <button
+                v-if="fallbackStats.objectsCount > 0"
+                type="button"
+                @click="syncFallbackToDrive"
+                :disabled="syncingFallback"
+                class="px-2.5 py-1 rounded-lg bg-neutral-900 text-white dark:bg-white dark:text-neutral-950 font-semibold hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-50"
+              >
+                {{ syncingFallback ? "Memigrasikan..." : "Migrasikan ke Drive" }}
+              </button>
+            </div>
+          </div>
+
           <div class="p-3 bg-canvas border border-subtle rounded-xl space-y-1">
             <div class="font-semibold text-primary">1. Kunci Enkripsi Wajib Disimpan</div>
             <p class="text-[11px] text-muted">
@@ -288,12 +343,6 @@
             <div class="font-semibold text-primary">2. Token OAuth Mode Testing (7 Hari)</div>
             <p class="text-[11px] text-muted">
               Jika OAuth consent screen di Google Cloud masih berstatus <em>Testing</em>, Google mencabut refresh token tiap 7 hari. Ubah ke <em>In Production</em> (atau Internal Workspace) untuk pemakaian jangka panjang.
-            </p>
-          </div>
-          <div class="p-3 bg-canvas border border-subtle rounded-xl space-y-1">
-            <div class="font-semibold text-primary">3. Sifat Proxy &amp; Rate Limit Drive</div>
-            <p class="text-[11px] text-muted">
-              Semua transfer melewati server GDriveS3 dan tunduk pada kuota API Google Drive (750 GB/hari/akun). Lihat kartu <em>Throttle (429)</em> di Dashboard untuk memantau batas API.
             </p>
           </div>
         </div>
@@ -314,8 +363,20 @@ const testing = ref(false);
 const auditing = ref(false);
 const cleaningAudit = ref(false);
 const retryingDeletes = ref(false);
+const syncingFallback = ref(false);
 const auditResult = ref<any | null>(null);
 const pendingDeletes = ref<any[]>([]);
+const fallbackCfg = ref({
+  enabled: true,
+  maxMb: 0,
+  autoSyncToDrive: true,
+  notifyOnFallback: true,
+});
+const fallbackStats = ref({
+  objectsCount: 0,
+  totalBytes: 0,
+  items: [] as any[],
+});
 
 const allMethods = ["GET", "PUT", "POST", "DELETE", "HEAD"];
 
@@ -338,10 +399,11 @@ const originsText = ref("*");
 const headersText = ref("*");
 
 async function loadSettings() {
-  const [wRes, cRes, pRes] = await Promise.all([
+  const [wRes, cRes, pRes, fRes] = await Promise.all([
     fetch("/api/settings/webhook"),
     fetch("/api/settings/cors"),
     fetch("/api/storage/pending-deletes"),
+    fetch("/api/storage/fallback"),
   ]);
 
   if (wRes.ok) {
@@ -355,6 +417,31 @@ async function loadSettings() {
   }
   if (pRes.ok) {
     pendingDeletes.value = await pRes.json();
+  }
+  if (fRes.ok) {
+    const data = await fRes.json();
+    if (data.config) fallbackCfg.value = data.config;
+    if (data.stats) fallbackStats.value = data.stats;
+  }
+}
+
+async function syncFallbackToDrive() {
+  syncingFallback.value = true;
+  try {
+    const res = await fetch("/api/storage/fallback/sync", { method: "POST" });
+    if (res.ok) {
+      const data = await res.json();
+      toast.success(`Migrasi selesai: ${data.migrated} berhasil, ${data.failed} gagal, tersisa ${data.remaining}`);
+      const fRes = await fetch("/api/storage/fallback");
+      if (fRes.ok) {
+        const fData = await fRes.json();
+        if (fData.stats) fallbackStats.value = fData.stats;
+      }
+    } else {
+      toast.error("Gagal memigrasikan objek fallback ke Drive");
+    }
+  } finally {
+    syncingFallback.value = false;
   }
 }
 
@@ -447,7 +534,7 @@ async function saveAll() {
       .map((s) => s.trim())
       .filter(Boolean);
 
-    const [wRes, cRes] = await Promise.all([
+    const [wRes, cRes, fRes] = await Promise.all([
       fetch("/api/settings/webhook", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -462,6 +549,11 @@ async function saveAll() {
           allowedHeaders: allowedHeaders.length ? allowedHeaders : ["*"],
         }),
       }),
+      fetch("/api/settings/fallback", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(fallbackCfg.value),
+      }),
     ]);
 
     if (!wRes.ok) {
@@ -474,8 +566,12 @@ async function saveAll() {
       toast.error(err.error || "Gagal menyimpan CORS");
       return;
     }
+    if (!fRes.ok) {
+      toast.error("Gagal menyimpan pengaturan fallback VPS");
+      return;
+    }
 
-    toast.success("Pengaturan Webhook & CORS disimpan");
+    toast.success("Pengaturan Webhook, CORS & Fallback disimpan");
   } finally {
     saving.value = false;
   }

@@ -104,6 +104,7 @@ aws s3 ls s3://my-bucket/ --endpoint-url http://localhost:9000
 GDriveS3 is built for **personal/team backups, media archives, and homelab storage** over Google Drive. Keep these architectural boundaries in mind before deploying:
 
 - **Google Drive API Limits & Double-Hop Proxy**: All object transfers stream through the GDriveS3 server and are subject to Google Drive's API rate limits and 750 GB/day per-account upload cap. Built-in exponential backoff retries `429`/`5xx` responses, and Drive telemetry is exposed on the Dashboard.
+- **VPS Local Fallback Storage**: When Google Drive uploads fail (quota exceeded, rate limit, revoked token, or empty pool), GDriveS3 can automatically spool and store uploads locally under `<dataDir>/vps-fallback/` (with configurable MB limit) and migrate them back to Google Drive automatically or on demand from the Settings panel.
 - **Single-Node SQLite State**: Bucket/object metadata and multipart manifests live in local SQLite (`gdrives3.db`). Always back up both `gdrives3.db` (via the 1-click Snapshot button in Settings) and `GDRIVES3_ENCRYPTION_KEY` / `.enckey`.
 - **Google OAuth Testing Mode Expiry**: Unverified Google Cloud OAuth apps in *Testing* mode expire refresh tokens every 7 days. Switch your consent screen to *In Production* (or *Internal* for Workspace) for long-running pools.
 - **S3 Subset**: Uses **Path-Style** addressing (`forcePathStyle: true`) and supports scoped per-bucket/read-only Access Keys, but does not implement virtual-hosted-style buckets, object versioning, ACLs, or Presigned POST.

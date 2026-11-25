@@ -1,4 +1,6 @@
-import { eq, and } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
+import { existsSync, copyFileSync, renameSync, unlinkSync } from "node:fs";
+import { basename, join, resolve, sep } from "node:path";
 import type { AppDatabase } from "../db/client";
 import {
   buckets,
@@ -13,7 +15,14 @@ import { DriveClient } from "../drive/client";
 import type { TokenCipher } from "../core/crypto";
 import type { GoogleOAuth } from "../drive/oauth";
 import { notifyWebhookIfEnabled } from "../core/webhook";
-import { MultipartEngine } from "./multipart";
+import { logger } from "../core/logger";
+import {
+  LOCAL_VPS_ACCOUNT_ID,
+  ensureFallbackDir,
+  ensureSpoolDir,
+  getLocalFallbackConfig,
+} from "../core/fallbackConfig";
+import { MultipartEngine, type UploadPayloadFn } from "./multipart";
 
 function parseByteRange(
   rangeHeader: string,
@@ -50,13 +59,183 @@ export class S3Engine {
     private db: AppDatabase,
     private balancer: Balancer,
     private oauth: GoogleOAuth,
-    private cipher: TokenCipher
+    private cipher: TokenCipher,
+    private dataDir: string = "./gdrives3-data"
   ) {
     this.multipart = new MultipartEngine(
       this.db,
-      this.balancer,
-      this.deleteDriveFile.bind(this)
+      this.deleteDriveFile.bind(this),
+      this.uploadWithDriveOrFallback.bind(this)
     );
+  }
+
+  private resolveFallbackPath(fileId: string): string {
+    const dir = resolve(ensureFallbackDir(this.dataDir));
+    const safeName = basename(fileId);
+    const full = resolve(dir, safeName);
+    if (!full.startsWith(dir + sep)) {
+      throw new Error("Invalid local fallback path");
+    }
+    return full;
+  }
+
+  private async uploadWithDriveOrFallback(params: {
+    bucketName: string;
+    objectKey: string;
+    driveFileName: string;
+    contentType: string;
+    body: ReadableStream;
+    expectedSha256?: string;
+  }): Promise<{ accountId: string; driveFileId: string; size: number; etag: string }> {
+    const fallbackCfg = getLocalFallbackConfig(this.db);
+
+    // Mode Zero Local Storage (fallback nonaktif): stream langsung ke Drive
+    if (!fallbackCfg.enabled) {
+      const { account, accessToken } = await this.balancer.pickAccount(params.objectKey);
+      const rootFolderId = account.folderId || "";
+      const bucketFolderId = await DriveClient.ensureSubfolder(
+        accessToken,
+        params.bucketName,
+        rootFolderId
+      );
+
+      const hasher = new Bun.CryptoHasher("md5");
+      const shaHasher = params.expectedSha256 ? new Bun.CryptoHasher("sha256") : null;
+      let totalBytes = 0;
+
+      const countingStream = params.body.pipeThrough(
+        new TransformStream<Uint8Array, Uint8Array>({
+          transform(chunk, controller) {
+            hasher.update(chunk);
+            if (shaHasher) shaHasher.update(chunk);
+            totalBytes += chunk.byteLength;
+            controller.enqueue(chunk);
+          },
+        })
+      );
+
+      const driveFileId = await DriveClient.uploadStream(
+        accessToken,
+        bucketFolderId || rootFolderId,
+        params.driveFileName,
+        params.contentType,
+        countingStream
+      );
+
+      if (params.expectedSha256 && shaHasher) {
+        const actualSha = shaHasher.digest("hex");
+        if (actualSha !== params.expectedSha256.toLowerCase()) {
+          await this.deleteDriveFile(account.id, driveFileId, params.objectKey).catch(() => {});
+          throw new Error("XAmzContentSHA256Mismatch");
+        }
+      }
+
+      this.balancer.recordUsage(account.id, totalBytes);
+      return {
+        accountId: account.id,
+        driveFileId,
+        size: totalBytes,
+        etag: hasher.digest("hex"),
+      };
+    }
+
+    // Mode Fallback VPS Aktif: spool ke file sementara agar aman di-fallback bila Drive gagal di tengah stream
+    const spoolDir = ensureSpoolDir(this.dataDir);
+    const spoolPath = join(spoolDir, `${crypto.randomUUID()}.tmp`);
+    const hasher = new Bun.CryptoHasher("md5");
+    const shaHasher = params.expectedSha256 ? new Bun.CryptoHasher("sha256") : null;
+    let totalBytes = 0;
+
+    const writer = Bun.file(spoolPath).writer();
+    const reader = params.body.getReader();
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (value && value.byteLength > 0) {
+          hasher.update(value);
+          if (shaHasher) shaHasher.update(value);
+          totalBytes += value.byteLength;
+          writer.write(value);
+        }
+      }
+      await writer.end();
+    } catch (err) {
+      try {
+        await writer.end();
+      } catch {
+        // ignore
+      }
+      if (existsSync(spoolPath)) unlinkSync(spoolPath);
+      throw err;
+    }
+
+    if (params.expectedSha256 && shaHasher) {
+      const actualSha = shaHasher.digest("hex");
+      if (actualSha !== params.expectedSha256.toLowerCase()) {
+        if (existsSync(spoolPath)) unlinkSync(spoolPath);
+        throw new Error("XAmzContentSHA256Mismatch");
+      }
+    }
+
+    const etag = hasher.digest("hex");
+
+    // Coba unggah ke Google Drive terlebih dahulu
+    try {
+      const { account, accessToken } = await this.balancer.pickAccount(params.objectKey);
+      const rootFolderId = account.folderId || "";
+      const bucketFolderId = await DriveClient.ensureSubfolder(
+        accessToken,
+        params.bucketName,
+        rootFolderId
+      );
+      const driveFileId = await DriveClient.uploadStream(
+        accessToken,
+        bucketFolderId || rootFolderId,
+        params.driveFileName,
+        params.contentType,
+        Bun.file(spoolPath).stream()
+      );
+      if (existsSync(spoolPath)) unlinkSync(spoolPath);
+      this.balancer.recordUsage(account.id, totalBytes);
+      return { accountId: account.id, driveFileId, size: totalBytes, etag };
+    } catch (driveErr: any) {
+      // Fallback ke penyimpanan lokal VPS
+      if (fallbackCfg.maxMb > 0) {
+        const stats = this.getLocalFallbackStats();
+        const maxBytes = fallbackCfg.maxMb * 1024 * 1024;
+        if (stats.totalBytes + totalBytes > maxBytes) {
+          if (existsSync(spoolPath)) unlinkSync(spoolPath);
+          throw new Error(
+            `Google Drive gagal (${driveErr?.message}) & batas kuota fallback VPS (${fallbackCfg.maxMb} MB) penuh`
+          );
+        }
+      }
+
+      const localFileId = `${crypto.randomUUID()}.bin`;
+      const targetPath = this.resolveFallbackPath(localFileId);
+      renameSync(spoolPath, targetPath);
+
+      logger.warn(
+        "fallback",
+        `Drive gagal (${driveErr?.message || "unknown"}), menyimpan ${params.bucketName}/${params.objectKey} ke VPS (${localFileId})`
+      );
+      if (fallbackCfg.notifyOnFallback) {
+        void notifyWebhookIfEnabled(
+          this.db,
+          "fallback_used",
+          `Upload ${params.bucketName}/${params.objectKey} dialihkan ke penyimpanan VPS karena Google Drive gagal: ${driveErr?.message}`,
+          { bucket: params.bucketName, key: params.objectKey, size: totalBytes }
+        );
+      }
+
+      return {
+        accountId: LOCAL_VPS_ACCOUNT_ID,
+        driveFileId: localFileId,
+        size: totalBytes,
+        etag,
+      };
+    }
   }
 
   async putObject(
@@ -70,55 +249,18 @@ export class S3Engine {
     const bucket = this.db.select().from(buckets).where(eq(buckets.name, bucketName)).get();
     if (!bucket) throw new Error("NoSuchBucket");
 
-    // 1. Pilih akun Google Drive melalui balancer
-    const { account, accessToken } = await this.balancer.pickAccount(key);
-    const rootFolderId = account.folderId || "";
-
-    // 2. Pastikan subfolder untuk bucket ada di dalam GDriveS3
-    const bucketFolderId = await DriveClient.ensureSubfolder(
-      accessToken,
+    const uploaded = await this.uploadWithDriveOrFallback({
       bucketName,
-      rootFolderId
-    );
-
-    // 3. Transform stream untuk menghitung ETag, byte size, dan optional SHA-256
-    const hasher = new Bun.CryptoHasher("md5");
-    const shaHasher = expectedSha256 ? new Bun.CryptoHasher("sha256") : null;
-    let totalBytes = 0;
-
-    const transformStream = new TransformStream<Uint8Array, Uint8Array>({
-      transform(chunk, controller) {
-        hasher.update(chunk);
-        if (shaHasher) shaHasher.update(chunk);
-        totalBytes += chunk.byteLength;
-        controller.enqueue(chunk);
-      },
+      objectKey: key,
+      driveFileName: key,
+      contentType,
+      body,
+      expectedSha256,
     });
 
-    const countingStream = body.pipeThrough(transformStream);
-
-    // 4. Upload stream langsung ke folder bucket di Google Drive
-    const fileName = key;
-    const driveFileId = await DriveClient.uploadStream(
-      accessToken,
-      bucketFolderId || rootFolderId,
-      fileName,
-      contentType,
-      countingStream
-    );
-
-    if (expectedSha256 && shaHasher) {
-      const actualSha = shaHasher.digest("hex");
-      if (actualSha !== expectedSha256.toLowerCase()) {
-        await this.deleteDriveFile(account.id, driveFileId, key).catch(() => {});
-        throw new Error("XAmzContentSHA256Mismatch");
-      }
-    }
-
-    const etag = hasher.digest("hex");
     const now = new Date().toISOString();
 
-    // 5. Update / Insert di DB
+    // Update / Insert di DB
     const existing = this.db
       .select()
       .from(objects)
@@ -126,18 +268,25 @@ export class S3Engine {
       .get();
 
     if (existing) {
-      if (existing.driveFileId && existing.accountId) {
+      if (existing.isMultipart && existing.parts) {
+        const oldParts: ManifestPart[] = JSON.parse(existing.parts);
+        for (const p of oldParts) {
+          this.deleteDriveFile(p.accountId, p.driveFileId, key).catch(() => {});
+        }
+      } else if (existing.driveFileId && existing.accountId) {
         this.deleteDriveFile(existing.accountId, existing.driveFileId, key).catch(() => {});
       }
       this.db
         .update(objects)
         .set({
-          size: totalBytes,
-          etag,
+          size: uploaded.size,
+          etag: uploaded.etag,
           contentType,
           metadata,
-          accountId: account.id,
-          driveFileId,
+          accountId: uploaded.accountId,
+          driveFileId: uploaded.driveFileId,
+          parts: null,
+          isMultipart: 0,
           updatedAt: now,
         })
         .where(eq(objects.id, existing.id))
@@ -149,20 +298,19 @@ export class S3Engine {
           id: crypto.randomUUID(),
           bucketId: bucket.id,
           objectKey: key,
-          size: totalBytes,
-          etag,
+          size: uploaded.size,
+          etag: uploaded.etag,
           contentType,
           metadata,
-          accountId: account.id,
-          driveFileId,
+          accountId: uploaded.accountId,
+          driveFileId: uploaded.driveFileId,
           createdAt: now,
           updatedAt: now,
         })
         .run();
     }
 
-    this.balancer.recordUsage(account.id, totalBytes);
-    return { etag, size: totalBytes };
+    return { etag: uploaded.etag, size: uploaded.size };
   }
 
   async getObject(
@@ -220,16 +368,33 @@ export class S3Engine {
           while (currentSliceIdx < slices.length) {
             if (!currentReader) {
               const slice = slices[currentSliceIdx];
-              const { accessToken } = await self.getAccountToken(slice.part.accountId);
-              const partRes = await DriveClient.downloadStream(
-                accessToken,
-                slice.part.driveFileId,
-                slice.rangeHeader
-              );
-              if ((!partRes.ok && partRes.status !== 206) || !partRes.body) {
-                throw new Error(`Gagal membaca part stream dari Drive (HTTP ${partRes.status})`);
+              if (slice.part.accountId === LOCAL_VPS_ACCOUNT_ID) {
+                const localFile = Bun.file(self.resolveFallbackPath(slice.part.driveFileId));
+                if (!(await localFile.exists())) {
+                  throw new Error("Part lokal fallback VPS tidak ditemukan");
+                }
+                if (slice.rangeHeader) {
+                  const m = slice.rangeHeader.match(/^bytes=(\d+)-(\d+)$/);
+                  if (m) {
+                    currentReader = localFile.slice(Number(m[1]), Number(m[2]) + 1).stream().getReader();
+                  } else {
+                    currentReader = localFile.stream().getReader();
+                  }
+                } else {
+                  currentReader = localFile.stream().getReader();
+                }
+              } else {
+                const { accessToken } = await self.getAccountToken(slice.part.accountId);
+                const partRes = await DriveClient.downloadStream(
+                  accessToken,
+                  slice.part.driveFileId,
+                  slice.rangeHeader
+                );
+                if ((!partRes.ok && partRes.status !== 206) || !partRes.body) {
+                  throw new Error(`Gagal membaca part stream dari Drive (HTTP ${partRes.status})`);
+                }
+                currentReader = partRes.body.getReader();
               }
-              currentReader = partRes.body.getReader();
             }
 
             const { done, value } = await currentReader.read();
@@ -270,6 +435,35 @@ export class S3Engine {
     }
 
     if (!obj.driveFileId || !obj.accountId) throw new Error("ObjectFileCorrupted");
+
+    if (obj.accountId === LOCAL_VPS_ACCOUNT_ID) {
+      const localFile = Bun.file(this.resolveFallbackPath(obj.driveFileId));
+      if (!(await localFile.exists())) throw new Error("NoSuchKey");
+      const totalSize = obj.size || localFile.size;
+      const parsedRange = rangeHeader ? parseByteRange(rangeHeader, totalSize) : null;
+      const headers: Record<string, string> = {
+        "Content-Type": obj.contentType || "application/octet-stream",
+        ETag: `"${obj.etag}"`,
+        "Accept-Ranges": "bytes",
+      };
+      if (parsedRange) {
+        const contentLen = parsedRange.end - parsedRange.start + 1;
+        headers["Content-Range"] = `bytes ${parsedRange.start}-${parsedRange.end}/${totalSize}`;
+        headers["Content-Length"] = String(contentLen);
+        return {
+          obj,
+          response: new Response(localFile.slice(parsedRange.start, parsedRange.end + 1).stream(), {
+            status: 206,
+            headers,
+          }),
+        };
+      }
+      headers["Content-Length"] = String(totalSize);
+      return {
+        obj,
+        response: new Response(localFile.stream(), { status: 200, headers }),
+      };
+    }
 
     const { accessToken } = await this.getAccountToken(obj.accountId);
     const driveRes = await DriveClient.downloadStream(accessToken, obj.driveFileId, rangeHeader);
@@ -342,6 +536,18 @@ export class S3Engine {
 
       for (let idx = 0; idx < srcParts.length; idx++) {
         const part = srcParts[idx];
+        if (part.accountId === LOCAL_VPS_ACCOUNT_ID) {
+          const srcPath = this.resolveFallbackPath(part.driveFileId);
+          const newLocalId = `${crypto.randomUUID()}.bin`;
+          copyFileSync(srcPath, this.resolveFallbackPath(newLocalId));
+          copiedParts.push({
+            accountId: LOCAL_VPS_ACCOUNT_ID,
+            driveFileId: newLocalId,
+            size: part.size,
+            etag: part.etag,
+          });
+          continue;
+        }
         const { account, accessToken } = await this.getAccountToken(part.accountId);
         const rootFolderId = account.folderId || "";
         const targetFolderId = await DriveClient.ensureSubfolder(
@@ -377,6 +583,30 @@ export class S3Engine {
           metadata: srcObj.metadata,
           parts: JSON.stringify(copiedParts),
           isMultipart: 1,
+          createdAt: now,
+          updatedAt: now,
+        })
+        .run();
+      return { etag: srcObj.etag };
+    }
+
+    if (srcObj.accountId === LOCAL_VPS_ACCOUNT_ID && srcObj.driveFileId) {
+      const srcPath = this.resolveFallbackPath(srcObj.driveFileId);
+      const newLocalId = `${crypto.randomUUID()}.bin`;
+      copyFileSync(srcPath, this.resolveFallbackPath(newLocalId));
+      const now = new Date().toISOString();
+      this.db
+        .insert(objects)
+        .values({
+          id: crypto.randomUUID(),
+          bucketId: dstBucket.id,
+          objectKey: dstKey,
+          size: srcObj.size,
+          etag: srcObj.etag,
+          contentType: srcObj.contentType,
+          metadata: srcObj.metadata,
+          accountId: LOCAL_VPS_ACCOUNT_ID,
+          driveFileId: newLocalId,
           createdAt: now,
           updatedAt: now,
         })
@@ -491,6 +721,16 @@ export class S3Engine {
   }
 
   private async deleteDriveFile(accountId: string, driveFileId: string, objectKey?: string) {
+    if (accountId === LOCAL_VPS_ACCOUNT_ID) {
+      try {
+        const localPath = this.resolveFallbackPath(driveFileId);
+        if (existsSync(localPath)) unlinkSync(localPath);
+      } catch {
+        // best effort local delete
+      }
+      return;
+    }
+
     try {
       const { accessToken } = await this.getAccountToken(accountId);
       await DriveClient.deleteFile(accessToken, driveFileId);
@@ -700,8 +940,10 @@ export class S3Engine {
       if (obj.isMultipart && obj.parts) {
         try {
           const parsed: ManifestPart[] = JSON.parse(obj.parts);
-          const missingPart = parsed.find(
-            (p) => scannedAccounts.has(p.accountId) && !foundInDrive.has(p.driveFileId)
+          const missingPart = parsed.find((p) =>
+            p.accountId === LOCAL_VPS_ACCOUNT_ID
+              ? !existsSync(this.resolveFallbackPath(p.driveFileId))
+              : scannedAccounts.has(p.accountId) && !foundInDrive.has(p.driveFileId)
           );
           if (missingPart) {
             missingInDrive.push({
@@ -709,7 +951,10 @@ export class S3Engine {
               bucketName: bName,
               key: obj.objectKey,
               driveFileId: missingPart.driveFileId,
-              accountEmail: accountEmailMap.get(missingPart.accountId) || missingPart.accountId,
+              accountEmail:
+                missingPart.accountId === LOCAL_VPS_ACCOUNT_ID
+                  ? "VPS Fallback (lokal)"
+                  : accountEmailMap.get(missingPart.accountId) || missingPart.accountId,
               size: obj.size,
             });
           }
@@ -717,13 +962,20 @@ export class S3Engine {
           // ignore
         }
       } else if (obj.accountId && obj.driveFileId) {
-        if (scannedAccounts.has(obj.accountId) && !foundInDrive.has(obj.driveFileId)) {
+        const isMissing =
+          obj.accountId === LOCAL_VPS_ACCOUNT_ID
+            ? !existsSync(this.resolveFallbackPath(obj.driveFileId))
+            : scannedAccounts.has(obj.accountId) && !foundInDrive.has(obj.driveFileId);
+        if (isMissing) {
           missingInDrive.push({
             objectId: obj.id,
             bucketName: bName,
             key: obj.objectKey,
             driveFileId: obj.driveFileId,
-            accountEmail: accountEmailMap.get(obj.accountId) || obj.accountId,
+            accountEmail:
+              obj.accountId === LOCAL_VPS_ACCOUNT_ID
+                ? "VPS Fallback (lokal)"
+                : accountEmailMap.get(obj.accountId) || obj.accountId,
             size: obj.size,
           });
         }
@@ -768,5 +1020,202 @@ export class S3Engine {
     }
 
     return { removedDbObjects, deletedDriveFiles };
+  }
+
+  getLocalFallbackStats(): {
+    objectsCount: number;
+    totalBytes: number;
+    items: { id: string; bucketName: string; key: string; size: number; isMultipart: boolean; updatedAt: string }[];
+  } {
+    const bucketMap = new Map(
+      this.db
+        .select()
+        .from(buckets)
+        .all()
+        .map((b) => [b.id, b.name])
+    );
+
+    const singleFallback = this.db
+      .select()
+      .from(objects)
+      .where(eq(objects.accountId, LOCAL_VPS_ACCOUNT_ID))
+      .all();
+
+    const multipartCandidates = this.db
+      .select()
+      .from(objects)
+      .where(and(eq(objects.isMultipart, 1), sql`${objects.parts} LIKE ${`%${LOCAL_VPS_ACCOUNT_ID}%`}`))
+      .all();
+
+    let totalBytes = 0;
+    const items: { id: string; bucketName: string; key: string; size: number; isMultipart: boolean; updatedAt: string }[] = [];
+
+    for (const obj of singleFallback) {
+      totalBytes += obj.size || 0;
+      items.push({
+        id: obj.id,
+        bucketName: bucketMap.get(obj.bucketId) || "(unknown)",
+        key: obj.objectKey,
+        size: obj.size || 0,
+        isMultipart: false,
+        updatedAt: obj.updatedAt,
+      });
+    }
+
+    for (const obj of multipartCandidates) {
+      let localPartBytes = 0;
+      try {
+        const parts: ManifestPart[] = JSON.parse(obj.parts || "[]");
+        for (const p of parts) {
+          if (p.accountId === LOCAL_VPS_ACCOUNT_ID) localPartBytes += p.size || 0;
+        }
+      } catch {
+        // ignore
+      }
+      if (localPartBytes > 0) {
+        totalBytes += localPartBytes;
+        items.push({
+          id: obj.id,
+          bucketName: bucketMap.get(obj.bucketId) || "(unknown)",
+          key: obj.objectKey,
+          size: localPartBytes,
+          isMultipart: true,
+          updatedAt: obj.updatedAt,
+        });
+      }
+    }
+
+    return {
+      objectsCount: items.length,
+      totalBytes,
+      items,
+    };
+  }
+
+  async syncLocalFallbackToDrive(): Promise<{ migrated: number; failed: number; remaining: number }> {
+    const bucketMap = new Map(
+      this.db
+        .select()
+        .from(buckets)
+        .all()
+        .map((b) => [b.id, b.name])
+    );
+
+    const singleFallback = this.db
+      .select()
+      .from(objects)
+      .where(eq(objects.accountId, LOCAL_VPS_ACCOUNT_ID))
+      .all();
+
+    let migrated = 0;
+    let failed = 0;
+
+    for (const obj of singleFallback) {
+      if (!obj.driveFileId) continue;
+      const bucketName = bucketMap.get(obj.bucketId);
+      if (!bucketName) continue;
+      const localPath = this.resolveFallbackPath(obj.driveFileId);
+      if (!existsSync(localPath)) {
+        failed++;
+        continue;
+      }
+
+      try {
+        const { account, accessToken } = await this.balancer.pickAccount(obj.objectKey);
+        const rootFolderId = account.folderId || "";
+        const bucketFolderId = await DriveClient.ensureSubfolder(accessToken, bucketName, rootFolderId);
+        const newDriveFileId = await DriveClient.uploadStream(
+          accessToken,
+          bucketFolderId || rootFolderId,
+          obj.objectKey,
+          obj.contentType || "application/octet-stream",
+          Bun.file(localPath).stream()
+        );
+
+        this.db
+          .update(objects)
+          .set({
+            accountId: account.id,
+            driveFileId: newDriveFileId,
+            updatedAt: new Date().toISOString(),
+          })
+          .where(eq(objects.id, obj.id))
+          .run();
+
+        this.balancer.recordUsage(account.id, obj.size || 0);
+        if (existsSync(localPath)) unlinkSync(localPath);
+        migrated++;
+      } catch {
+        failed++;
+      }
+    }
+
+    const multipartCandidates = this.db
+      .select()
+      .from(objects)
+      .where(and(eq(objects.isMultipart, 1), sql`${objects.parts} LIKE ${`%${LOCAL_VPS_ACCOUNT_ID}%`}`))
+      .all();
+
+    for (const obj of multipartCandidates) {
+      const bucketName = bucketMap.get(obj.bucketId);
+      if (!bucketName || !obj.parts) continue;
+      let parts: ManifestPart[];
+      try {
+        parts = JSON.parse(obj.parts);
+      } catch {
+        continue;
+      }
+
+      let changed = false;
+      let objFailed = false;
+      for (let i = 0; i < parts.length; i++) {
+        const p = parts[i];
+        if (p.accountId !== LOCAL_VPS_ACCOUNT_ID) continue;
+        const localPath = this.resolveFallbackPath(p.driveFileId);
+        if (!existsSync(localPath)) {
+          objFailed = true;
+          continue;
+        }
+        try {
+          const { account, accessToken } = await this.balancer.pickAccount(obj.objectKey);
+          const rootFolderId = account.folderId || "";
+          const bucketFolderId = await DriveClient.ensureSubfolder(accessToken, bucketName, rootFolderId);
+          const newDriveFileId = await DriveClient.uploadStream(
+            accessToken,
+            bucketFolderId || rootFolderId,
+            `${obj.objectKey}.part-${i + 1}`,
+            "application/octet-stream",
+            Bun.file(localPath).stream()
+          );
+          parts[i] = {
+            ...p,
+            accountId: account.id,
+            driveFileId: newDriveFileId,
+          };
+          this.balancer.recordUsage(account.id, p.size || 0);
+          if (existsSync(localPath)) unlinkSync(localPath);
+          changed = true;
+        } catch {
+          objFailed = true;
+        }
+      }
+
+      if (changed) {
+        this.db
+          .update(objects)
+          .set({
+            parts: JSON.stringify(parts),
+            updatedAt: new Date().toISOString(),
+          })
+          .where(eq(objects.id, obj.id))
+          .run();
+      }
+
+      if (!objFailed && changed) migrated++;
+      else if (objFailed) failed++;
+    }
+
+    const remaining = this.getLocalFallbackStats().objectsCount;
+    return { migrated, failed, remaining };
   }
 }

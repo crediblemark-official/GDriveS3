@@ -152,6 +152,7 @@ for bucket in response['Buckets']:
 ## 6. Transparency, Audit & Known Limitations
 
 - **Drive API Retries & Telemetry**: `DriveClient` automatically retries transient `429` / `5xx` responses with exponential backoff + jitter and exposes request, throttle, retry, and error counters on the Dashboard.
+- **VPS Local Fallback & Auto-Migration**: When Google Drive uploads fail (unavailable pool, quota exceeded, token revoked, or upstream `429`/`5xx`), `S3Engine` and `MultipartEngine` spool payloads safely to `<dataDir>/vps-fallback/` (subject to `maxMb` in Settings), continue serving `GET`/`Range`/`CopyObject` requests seamlessly, and migrate objects back to Google Drive either hourly via the background sweeper or manually from Settings.
 - **Failed-Delete Queue**: Failed Google Drive file deletions are queued in `pending_drive_deletes` and retried hourly (or manually from Settings) rather than failing silently.
 - **Drive ↔ SQLite Audit**: The Settings panel provides a pool audit tool to detect objects missing from Google Drive or orphan Drive files consuming quota.
 - **Architectural Boundaries**: GDriveS3 is a single-node SQLite + proxy gateway using Path-Style S3 addressing; it is not designed for high-concurrency public CDN traffic, multi-region replication, or S3 object versioning/ACLs.

@@ -133,7 +133,7 @@ const recentWebhookAlerts = new Map<string, number>();
 
 export async function notifyWebhookIfEnabled(
   db: AppDatabase,
-  event: "quota_warning" | "auth_error",
+  event: "quota_warning" | "auth_error" | "fallback_used",
   message: string,
   details?: Record<string, any>
 ): Promise<void> {
