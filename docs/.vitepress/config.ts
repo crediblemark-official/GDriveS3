@@ -5,7 +5,11 @@ export default defineConfig({
   description: "S3-Compatible Object Storage over Google Drive",
   base: "/GDriveS3/",
   cleanUrls: true,
+  head: [
+    ["link", { rel: "icon", type: "image/svg+xml", href: "/GDriveS3/logo.svg" }],
+  ],
   themeConfig: {
+    logo: "/logo.svg",
     nav: [
       { text: "Home", link: "/" },
       { text: "User Guide", link: "/USER_GUIDE" },

@@ -100,14 +100,38 @@ export function initDatabase(dataDir: string, adminEmail: string, adminPassword:
       access_key_id TEXT UNIQUE NOT NULL,
       secret_hash TEXT NOT NULL,
       label TEXT,
+      permissions TEXT DEFAULT 'read_write',
+      allowed_buckets TEXT,
       created_at TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS pending_drive_deletes (
+      id TEXT PRIMARY KEY,
+      account_id TEXT NOT NULL,
+      drive_file_id TEXT NOT NULL,
+      object_key TEXT,
+      attempts INTEGER NOT NULL DEFAULT 0,
+      last_error TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_pending_deletes_account ON pending_drive_deletes(account_id);
 
     CREATE TABLE IF NOT EXISTS system_settings (
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL
     );
   `);
+
+  // Migrasi kolom baru pada DB lama jika belum ada
+  const keyCols = sqlite.query("PRAGMA table_info(s3_access_keys)").all() as { name: string }[];
+  const keyColNames = new Set(keyCols.map((c) => c.name));
+  if (!keyColNames.has("permissions")) {
+    sqlite.run("ALTER TABLE s3_access_keys ADD COLUMN permissions TEXT DEFAULT 'read_write';");
+  }
+  if (!keyColNames.has("allowed_buckets")) {
+    sqlite.run("ALTER TABLE s3_access_keys ADD COLUMN allowed_buckets TEXT;");
+  }
 
   // Deduplikasi baris objek lama sebelum menegakkan UNIQUE INDEX pada (bucket_id, object_key)
   sqlite.run(`

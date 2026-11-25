@@ -19,7 +19,7 @@ async function main() {
   const config = loadConfig();
 
   // 1. Inisialisasi DB SQLite & Admin
-  const { db } = initDatabase(config.dataDir, config.adminEmail, config.adminPassword);
+  const { db, sqlite } = initDatabase(config.dataDir, config.adminEmail, config.adminPassword);
 
   // 2. Cipher AES-GCM
   const cipher = await TokenCipher.init(config.encryptionKey, config.dataDir);
@@ -86,6 +86,7 @@ async function main() {
   const apiRouter = createApiRouter(db, oauth, cipher, s3Engine, {
     s3PublicUrl: config.s3PublicUrl,
     s3Port: config.s3Port,
+    sqlite,
   });
   const panelApp = new Elysia()
     .use(createHttpLogger("api"))
@@ -130,15 +131,19 @@ async function main() {
     balancingStrategy,
   });
 
-  // 6. Background Sweeper (membersihkan multipart upload terbengkalai > 24 jam)
+  // 6. Background Sweeper (membersihkan multipart upload terbengkalai & antrean hapus Drive)
   const sweeper = setInterval(async () => {
     try {
       const swept = await s3Engine.sweepStaleMultipartUploads();
       if (swept > 0) {
         logger.info("sweeper", `Membersihkan ${swept} upload multipart yang kedaluwarsa`);
       }
+      const retried = await s3Engine.retryPendingDeletes();
+      if (retried.succeeded > 0) {
+        logger.info("sweeper", `Menghapus ulang ${retried.succeeded} file tertunda dari Google Drive`);
+      }
     } catch (err) {
-      logger.error("sweeper", "Gagal menjalankan pembersihan multipart", err);
+      logger.error("sweeper", "Gagal menjalankan pembersihan multipart/Drive", err);
     }
   }, 60 * 60 * 1000);
 

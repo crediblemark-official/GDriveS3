@@ -3,11 +3,35 @@ import { eq } from "drizzle-orm";
 import type { AppDatabase } from "../db/client";
 import { users, sessions } from "../db/schema";
 
+const LOGIN_WINDOW_MS = 5 * 60 * 1000;
+const LOGIN_MAX_FAILURES = 10;
+const failedLoginMap = new Map<string, { count: number; resetAt: number }>();
+
+function getClientIp(request: Request): string {
+  const xff = request.headers.get("x-forwarded-for");
+  if (xff) return xff.split(",")[0].trim() || "local";
+  return request.headers.get("x-real-ip")?.trim() || "local";
+}
+
+export function clearLoginRateLimits(): void {
+  failedLoginMap.clear();
+}
+
 export function createAuthRoutes(db: AppDatabase) {
   const router = new Elysia();
 
   // Login
   router.post("/auth/login", async ({ body, cookie: { gdrives3_session }, request, set }) => {
+    const clientIp = getClientIp(request);
+    const nowMs = Date.now();
+    const rateEntry = failedLoginMap.get(clientIp);
+    if (rateEntry && rateEntry.resetAt > nowMs && rateEntry.count >= LOGIN_MAX_FAILURES) {
+      const retryAfterSec = Math.max(1, Math.ceil((rateEntry.resetAt - nowMs) / 1000));
+      set.status = 429;
+      set.headers["Retry-After"] = String(retryAfterSec);
+      return { error: "Terlalu banyak percobaan login. Silakan coba lagi nanti." };
+    }
+
     const { email, password } = body as { email?: string; password?: string };
     if (!email || !password) {
       set.status = 400;
@@ -16,9 +40,17 @@ export function createAuthRoutes(db: AppDatabase) {
 
     const user = db.select().from(users).where(eq(users.email, email.trim())).get();
     if (!user || !Bun.password.verifySync(password, user.passwordHash)) {
+      const prev = failedLoginMap.get(clientIp);
+      if (!prev || prev.resetAt <= nowMs) {
+        failedLoginMap.set(clientIp, { count: 1, resetAt: nowMs + LOGIN_WINDOW_MS });
+      } else {
+        prev.count += 1;
+      }
       set.status = 401;
       return { error: "Email atau password salah" };
     }
+
+    failedLoginMap.delete(clientIp);
 
     const token = crypto.randomUUID();
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();

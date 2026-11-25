@@ -1,5 +1,6 @@
 import { Elysia } from "elysia";
 import { eq } from "drizzle-orm";
+import type { Database } from "bun:sqlite";
 import type { AppDatabase } from "../db/client";
 import { sessions } from "../db/schema";
 import type { TokenCipher } from "../core/crypto";
@@ -23,7 +24,7 @@ export function createApiRouter(
   oauth: GoogleOAuth,
   cipher: TokenCipher,
   engine: S3Engine,
-  opts?: { s3PublicUrl?: string; s3Port?: number }
+  opts?: { s3PublicUrl?: string; s3Port?: number; sqlite?: Database }
 ) {
   return new Elysia({ prefix: "/api" })
     .onBeforeHandle(({ request, cookie: { gdrives3_session }, set }) => {

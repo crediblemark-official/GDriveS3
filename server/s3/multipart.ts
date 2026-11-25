@@ -45,7 +45,8 @@ export class MultipartEngine {
   async uploadPart(
     uploadId: string,
     partNumber: number,
-    body: ReadableStream
+    body: ReadableStream,
+    expectedSha256?: string
   ): Promise<{ etag: string }> {
     const upload = this.db
       .select()
@@ -66,11 +67,13 @@ export class MultipartEngine {
     );
 
     const hasher = new Bun.CryptoHasher("md5");
+    const shaHasher = expectedSha256 ? new Bun.CryptoHasher("sha256") : null;
     let partBytes = 0;
 
     const transformStream = new TransformStream<Uint8Array, Uint8Array>({
       transform(chunk, controller) {
         hasher.update(chunk);
+        if (shaHasher) shaHasher.update(chunk);
         partBytes += chunk.byteLength;
         controller.enqueue(chunk);
       },
@@ -86,6 +89,14 @@ export class MultipartEngine {
       "application/octet-stream",
       countingStream
     );
+
+    if (expectedSha256 && shaHasher) {
+      const actualSha = shaHasher.digest("hex");
+      if (actualSha !== expectedSha256.toLowerCase()) {
+        await this.deleteDriveFile(account.id, driveFileId).catch(() => {});
+        throw new Error("XAmzContentSHA256Mismatch");
+      }
+    }
 
     const etag = hasher.digest("hex");
 

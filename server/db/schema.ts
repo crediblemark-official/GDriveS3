@@ -95,8 +95,23 @@ export const s3AccessKeys = sqliteTable("s3_access_keys", {
   accessKeyId: text("access_key_id").notNull().unique(),
   secretHash: text("secret_hash").notNull(), // Encrypted AES-GCM
   label: text("label"),
+  permissions: text("permissions").default("read_write"), // "read_write" | "read_only"
+  allowedBuckets: text("allowed_buckets"), // JSON string[] atau null untuk semua bucket
   createdAt: text("created_at").notNull(),
 });
+
+export const pendingDriveDeletes = sqliteTable("pending_drive_deletes", {
+  id: text("id").primaryKey(),
+  accountId: text("account_id").notNull(),
+  driveFileId: text("drive_file_id").notNull(),
+  objectKey: text("object_key"),
+  attempts: integer("attempts").notNull().default(0),
+  lastError: text("last_error"),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+}, (t) => [
+  index("idx_pending_deletes_account").on(t.accountId),
+]);
 
 export const systemSettings = sqliteTable("system_settings", {
   key: text("key").primaryKey(),

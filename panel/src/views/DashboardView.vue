@@ -157,6 +157,29 @@
             <span>{{ isCleaning ? "Memproses..." : "Bersihkan" }}</span>
           </button>
         </div>
+
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px] font-mono">
+          <div class="p-2 bg-canvas border border-subtle rounded-lg">
+            <div class="text-muted">Req Drive</div>
+            <div class="font-bold text-primary mt-0.5">{{ stats.driveTelemetry?.totalRequests ?? 0 }}</div>
+          </div>
+          <div class="p-2 bg-canvas border border-subtle rounded-lg">
+            <div class="text-muted">Throttle (429)</div>
+            <div class="font-bold mt-0.5" :class="(stats.driveTelemetry?.rateLimitHits || 0) > 0 ? 'text-warning' : 'text-primary'">
+              {{ stats.driveTelemetry?.rateLimitHits ?? 0 }}
+            </div>
+          </div>
+          <div class="p-2 bg-canvas border border-subtle rounded-lg">
+            <div class="text-muted">Retry</div>
+            <div class="font-bold text-primary mt-0.5">{{ stats.driveTelemetry?.retryAttempts ?? 0 }}</div>
+          </div>
+          <div class="p-2 bg-canvas border border-subtle rounded-lg">
+            <div class="text-muted">Antrean Hapus</div>
+            <div class="font-bold mt-0.5" :class="stats.pendingDeletesCount > 0 ? 'text-warning' : 'text-primary'">
+              {{ stats.pendingDeletesCount ?? 0 }}
+            </div>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -245,6 +268,13 @@ const stats = ref({
   totalStorageLimit: 0,
   totalStorageUsage: 0,
   totalObjectBytes: 0,
+  pendingDeletesCount: 0,
+  driveTelemetry: {
+    totalRequests: 0,
+    rateLimitHits: 0,
+    retryAttempts: 0,
+    failedRequests: 0,
+  },
   s3Endpoint: "http://localhost:9000",
   accounts: [] as any[],
 });

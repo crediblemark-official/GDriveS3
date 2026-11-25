@@ -58,4 +58,28 @@ describe("API Session Auth Guard", () => {
     );
     expect(keysRes.status).toBe(200);
   });
+
+  it("should rate-limit repeated failed login attempts with 429", async () => {
+    const ipHeader = { "x-forwarded-for": "203.0.113.77", "Content-Type": "application/json" };
+    for (let i = 0; i < 10; i++) {
+      const res = await api.handle(
+        new Request("http://localhost/api/auth/login", {
+          method: "POST",
+          headers: ipHeader,
+          body: JSON.stringify({ email: "admin@test.local", password: "wrong-password" }),
+        })
+      );
+      expect(res.status).toBe(401);
+    }
+
+    const blockedRes = await api.handle(
+      new Request("http://localhost/api/auth/login", {
+        method: "POST",
+        headers: ipHeader,
+        body: JSON.stringify({ email: "admin@test.local", password: "wrong-password" }),
+      })
+    );
+    expect(blockedRes.status).toBe(429);
+    expect(blockedRes.headers.get("retry-after")).toBeTruthy();
+  });
 });

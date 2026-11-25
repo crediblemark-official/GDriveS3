@@ -4,6 +4,16 @@ import type { AppDatabase } from "../db/client";
 import { s3AccessKeys } from "../db/schema";
 import type { TokenCipher } from "../core/crypto";
 
+function parseAllowedBuckets(raw: string | null): string[] | null {
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) && parsed.length > 0 ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
 export function createKeysRoutes(
   db: AppDatabase,
   cipher: TokenCipher
@@ -17,13 +27,34 @@ export function createKeysRoutes(
       id: k.id,
       accessKeyId: k.accessKeyId,
       label: k.label,
+      permissions: k.permissions || "read_write",
+      allowedBuckets: parseAllowedBuckets(k.allowedBuckets),
       createdAt: k.createdAt,
     }));
   });
 
   // Create Access Key
-  router.post("/keys", async ({ body }) => {
-    const { label } = body as { label?: string };
+  router.post("/keys", async ({ body, set }) => {
+    const {
+      label,
+      permissions = "read_write",
+      allowedBuckets = null,
+    } = (body as {
+      label?: string;
+      permissions?: string;
+      allowedBuckets?: string[] | null;
+    }) || {};
+
+    if (permissions !== "read_write" && permissions !== "read_only") {
+      set.status = 400;
+      return { error: "Permissions harus 'read_write' atau 'read_only'" };
+    }
+
+    const normalizedBuckets = Array.isArray(allowedBuckets)
+      ? Array.from(new Set(allowedBuckets.map((b) => String(b).trim()).filter(Boolean)))
+      : [];
+    const allowedBucketsJson = normalizedBuckets.length > 0 ? JSON.stringify(normalizedBuckets) : null;
+
     const rawKey = new Uint8Array(16);
     const rawSecret = new Uint8Array(32);
     crypto.getRandomValues(rawKey);
@@ -38,6 +69,8 @@ export function createKeysRoutes(
       accessKeyId,
       secretHash,
       label: label || "Default Key",
+      permissions,
+      allowedBuckets: allowedBucketsJson,
       createdAt: new Date().toISOString(),
     };
     db.insert(s3AccessKeys).values(newKey).run();
@@ -47,6 +80,8 @@ export function createKeysRoutes(
       accessKeyId,
       secretKey, // Ditampilkan satu kali saja saat dibuat
       label: newKey.label,
+      permissions: newKey.permissions,
+      allowedBuckets: normalizedBuckets.length > 0 ? normalizedBuckets : null,
       createdAt: newKey.createdAt,
     };
   });

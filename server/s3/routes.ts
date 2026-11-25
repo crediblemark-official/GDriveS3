@@ -1,5 +1,5 @@
 import { Elysia } from "elysia";
-import { eq, and } from "drizzle-orm";
+import { eq, and, gt, asc, sql } from "drizzle-orm";
 import type { AppDatabase } from "../db/client";
 import { buckets, objects, s3AccessKeys } from "../db/schema";
 import type { S3Engine } from "./engine";
@@ -100,14 +100,41 @@ function unwrapPayloadStream(request: Request): ReadableStream<Uint8Array> | nul
   return request.body;
 }
 
+export interface S3KeyPolicy {
+  permissions: "read_write" | "read_only";
+  allowedBuckets: string[] | null;
+}
+
+function parseKeyPolicy(row: typeof s3AccessKeys.$inferSelect): S3KeyPolicy {
+  const permissions = row.permissions === "read_only" ? "read_only" : "read_write";
+  let allowedBuckets: string[] | null = null;
+  if (row.allowedBuckets) {
+    try {
+      const parsed = JSON.parse(row.allowedBuckets);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        allowedBuckets = parsed;
+      }
+    } catch {
+      allowedBuckets = null;
+    }
+  }
+  return { permissions, allowedBuckets };
+}
+
+function extractSha256Header(request: Request): string | undefined {
+  const header = (request.headers.get("x-amz-content-sha256") || "").trim();
+  return /^[a-f0-9]{64}$/i.test(header) ? header : undefined;
+}
+
 export function createS3Router(
   db: AppDatabase,
   engine: S3Engine,
   cipher: TokenCipher
 ) {
   const router = new Elysia();
+  const requestPolicies = new WeakMap<Request, S3KeyPolicy>();
 
-  // Middleware Auth SigV4
+  // Middleware Auth SigV4 + Key Policy Enforcement
   router.onRequest(async ({ request, set }) => {
     // 0. Allow CORS Preflight
     if (request.method === "OPTIONS") return;
@@ -142,11 +169,36 @@ export function createS3Router(
       set.headers["Content-Type"] = "application/xml";
       return xmlError("SignatureDoesNotMatch", "Signature tidak cocok", request.url);
     }
+
+    // 4. Terapkan Policy Access Key (read_only & allowedBuckets)
+    const policy = parseKeyPolicy(keyRow);
+    requestPolicies.set(request, policy);
+
+    const pathname = new URL(request.url).pathname;
+    const firstSegment = pathname.split("/").filter(Boolean)[0];
+    const isWrite = request.method === "PUT" || request.method === "POST" || request.method === "DELETE";
+
+    if (policy.permissions === "read_only" && isWrite) {
+      set.status = 403;
+      set.headers["Content-Type"] = "application/xml";
+      return xmlError("AccessDenied", "Access Key bersifat read-only", pathname);
+    }
+
+    if (firstSegment && policy.allowedBuckets && !policy.allowedBuckets.includes(firstSegment)) {
+      set.status = 403;
+      set.headers["Content-Type"] = "application/xml";
+      return xmlError("AccessDenied", "Access Key tidak diizinkan mengakses bucket ini", pathname);
+    }
   });
 
   // 1. Root Operations (List Buckets)
-  router.get("/", async ({ set }) => {
-    const allBuckets = db.select().from(buckets).all();
+  router.get("/", async ({ request, set }) => {
+    const policy = requestPolicies.get(request);
+    let allBuckets = db.select().from(buckets).all();
+    if (policy?.allowedBuckets) {
+      const allowed = new Set(policy.allowedBuckets);
+      allBuckets = allBuckets.filter((b) => allowed.has(b.name));
+    }
     set.headers["Content-Type"] = "application/xml";
     return xmlListBuckets(allBuckets);
   });
@@ -184,25 +236,60 @@ export function createS3Router(
       }
     }
 
-    const allObjects = db
-      .select()
-      .from(objects)
-      .where(eq(objects.bucketId, bucket.id))
-      .all()
-      .sort((a, b) => a.objectKey.localeCompare(b.objectKey));
+    const conditions = [eq(objects.bucketId, bucket.id)];
+    if (prefix) {
+      conditions.push(sql`substr(${objects.objectKey}, 1, ${prefix.length}) = ${prefix}`);
+    }
+    if (cursorKey) {
+      conditions.push(gt(objects.objectKey, cursorKey));
+    }
 
     type ListedItem =
       | { kind: "content"; sortKey: string; data: { key: string; size: number; etag: string; updatedAt: string } }
       | { kind: "prefix"; sortKey: string };
 
-    const seenPrefixes = new Set<string>();
-    const items: ListedItem[] = [];
+    let page: ListedItem[] = [];
+    let isTruncated = false;
 
-    for (const obj of allObjects) {
-      if (!obj.objectKey.startsWith(prefix)) continue;
+    if (!delimiter) {
+      // Fast path: cursor pagination langsung di SQLite tanpa load seluruh bucket ke memori
+      const rows = db
+        .select({
+          key: objects.objectKey,
+          size: objects.size,
+          etag: objects.etag,
+          updatedAt: objects.updatedAt,
+        })
+        .from(objects)
+        .where(and(...conditions))
+        .orderBy(asc(objects.objectKey))
+        .limit(maxKeys + 1)
+        .all();
 
-      if (delimiter) {
-        const afterPrefix = obj.objectKey.slice(prefix.length);
+      isTruncated = rows.length > maxKeys;
+      page = rows.slice(0, maxKeys).map((r) => ({
+        kind: "content",
+        sortKey: r.key,
+        data: r,
+      }));
+    } else {
+      const rows = db
+        .select({
+          key: objects.objectKey,
+          size: objects.size,
+          etag: objects.etag,
+          updatedAt: objects.updatedAt,
+        })
+        .from(objects)
+        .where(and(...conditions))
+        .orderBy(asc(objects.objectKey))
+        .all();
+
+      const seenPrefixes = new Set<string>();
+      const items: ListedItem[] = [];
+
+      for (const obj of rows) {
+        const afterPrefix = obj.key.slice(prefix.length);
         const idx = afterPrefix.indexOf(delimiter);
         if (idx >= 0) {
           const cp = prefix + afterPrefix.slice(0, idx + 1);
@@ -214,25 +301,19 @@ export function createS3Router(
           }
           continue;
         }
-      }
 
-      if (!cursorKey || obj.objectKey > cursorKey) {
         items.push({
           kind: "content",
-          sortKey: obj.objectKey,
-          data: {
-            key: obj.objectKey,
-            size: obj.size,
-            etag: obj.etag,
-            updatedAt: obj.updatedAt,
-          },
+          sortKey: obj.key,
+          data: obj,
         });
       }
+
+      items.sort((a, b) => a.sortKey.localeCompare(b.sortKey));
+      isTruncated = items.length > maxKeys;
+      page = items.slice(0, maxKeys);
     }
 
-    items.sort((a, b) => a.sortKey.localeCompare(b.sortKey));
-    const isTruncated = items.length > maxKeys;
-    const page = items.slice(0, maxKeys);
     const nextContinuationToken =
       isTruncated && page.length > 0
         ? Buffer.from(page[page.length - 1].sortKey).toString("base64")
@@ -292,13 +373,13 @@ export function createS3Router(
       return xmlError("NoSuchBucket", "Bucket tidak ditemukan", bucketName);
     }
 
-    const objCount = db
-      .select()
+    const countRow = db
+      .select({ count: sql<number>`count(*)` })
       .from(objects)
       .where(eq(objects.bucketId, bucket.id))
-      .all().length;
+      .get();
 
-    if (objCount > 0) {
+    if (Number(countRow?.count || 0) > 0) {
       set.status = 409;
       set.headers["Content-Type"] = "application/xml";
       return xmlError("BucketNotEmpty", "Bucket masih berisi file", bucketName);
@@ -380,18 +461,25 @@ export function createS3Router(
         return xmlError("IncompleteBody", "Request body kosong", key);
       }
       try {
+        const expectedSha = extractSha256Header(request);
         const { etag } = await engine.uploadPart(
           query.uploadId as string,
           Number(query.partNumber),
-          partBody
+          partBody,
+          expectedSha
         );
         set.headers["ETag"] = `"${etag}"`;
         set.status = 200;
         return "";
       } catch (err: any) {
-        set.status = 500;
+        const msg = String(err?.message || "");
+        set.status = msg === "XAmzContentSHA256Mismatch" ? 400 : 500;
         set.headers["Content-Type"] = "application/xml";
-        return xmlError("InternalError", err.message, key);
+        return xmlError(
+          msg === "XAmzContentSHA256Mismatch" ? "XAmzContentSHA256Mismatch" : "InternalError",
+          msg,
+          key
+        );
       }
     }
 
@@ -402,6 +490,13 @@ export function createS3Router(
       const slashIdx = cleanSource.indexOf("/");
       const srcBucket = cleanSource.slice(0, slashIdx);
       const srcKey = cleanSource.slice(slashIdx + 1);
+
+      const policy = requestPolicies.get(request);
+      if (policy?.allowedBuckets && !policy.allowedBuckets.includes(srcBucket)) {
+        set.status = 403;
+        set.headers["Content-Type"] = "application/xml";
+        return xmlError("AccessDenied", "Access Key tidak diizinkan membaca bucket sumber", key);
+      }
 
       try {
         const { etag } = await engine.copyObject(srcBucket, srcKey, bucketName, key);
@@ -432,20 +527,27 @@ export function createS3Router(
     }
 
     try {
+      const expectedSha = extractSha256Header(request);
       const { etag } = await engine.putObject(
         bucketName,
         key,
         contentType,
         JSON.stringify(metadata),
-        putBody
+        putBody,
+        expectedSha
       );
       set.headers["ETag"] = `"${etag}"`;
       set.status = 200;
       return "";
     } catch (err: any) {
-      set.status = 500;
+      const msg = String(err?.message || "");
+      set.status = msg === "XAmzContentSHA256Mismatch" ? 400 : 500;
       set.headers["Content-Type"] = "application/xml";
-      return xmlError("InternalError", err.message, key);
+      return xmlError(
+        msg === "XAmzContentSHA256Mismatch" ? "XAmzContentSHA256Mismatch" : "InternalError",
+        msg,
+        key
+      );
     }
   });
 

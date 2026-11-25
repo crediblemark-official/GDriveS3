@@ -5,13 +5,7 @@
       <!-- Brand & Abstract Geometric Mark -->
       <div class="h-14 px-4 flex items-center justify-between border-b border-subtle shrink-0">
         <div class="flex items-center gap-2.5">
-          <div class="w-8 h-8 rounded-lg bg-neutral-900 text-white dark:bg-white dark:text-neutral-950 flex items-center justify-center shadow-2xs">
-            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M12 2L2 7l10 5 10-5-10-5z" />
-              <path d="M2 17l10 5 10-5" />
-              <path d="M2 12l10 5 10-5" />
-            </svg>
-          </div>
+          <img src="/logo.svg" alt="GDriveS3" class="w-8 h-8 rounded-lg shadow-2xs shrink-0" />
           <div>
             <div class="font-bold text-sm tracking-tight leading-none text-primary">GDriveS3</div>
             <div class="text-[10px] text-muted font-mono leading-none mt-1">S3-over-Drive</div>

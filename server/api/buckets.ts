@@ -1,5 +1,5 @@
 import { Elysia } from "elysia";
-import { eq } from "drizzle-orm";
+import { eq, and, sql, asc } from "drizzle-orm";
 import type { AppDatabase } from "../db/client";
 import { buckets, objects, s3AccessKeys } from "../db/schema";
 import type { S3Engine } from "../s3/engine";
@@ -15,18 +15,31 @@ export function createBucketsRoutes(
 ) {
   const router = new Elysia();
 
-  // List Buckets
+  // List Buckets (SQLite aggregation — tanpa memuat seluruh baris objek ke memori)
   router.get("/buckets", async () => {
     const list = db.select().from(buckets).all();
+    const statsRows = db
+      .select({
+        bucketId: objects.bucketId,
+        objectsCount: sql<number>`count(*)`,
+        totalSize: sql<number>`coalesce(sum(${objects.size}), 0)`,
+      })
+      .from(objects)
+      .groupBy(objects.bucketId)
+      .all();
+
+    const statsMap = new Map(
+      statsRows.map((r) => [r.bucketId, { count: Number(r.objectsCount), size: Number(r.totalSize) }])
+    );
+
     return list.map((b) => {
-      const objs = db.select().from(objects).where(eq(objects.bucketId, b.id)).all();
-      const totalSize = objs.reduce((sum, o) => sum + (o.size || 0), 0);
+      const s = statsMap.get(b.id);
       return {
         id: b.id,
         name: b.name,
         createdAt: b.createdAt,
-        objectsCount: objs.length,
-        totalSize,
+        objectsCount: s?.count ?? 0,
+        totalSize: s?.size ?? 0,
       };
     });
   });
@@ -56,8 +69,12 @@ export function createBucketsRoutes(
 
   // Delete Bucket
   router.delete("/buckets/:id", async ({ params, set }) => {
-    const objs = db.select().from(objects).where(eq(objects.bucketId, params.id)).all();
-    if (objs.length > 0) {
+    const countRow = db
+      .select({ count: sql<number>`count(*)` })
+      .from(objects)
+      .where(eq(objects.bucketId, params.id))
+      .get();
+    if (Number(countRow?.count || 0) > 0) {
       set.status = 409;
       return { error: "Bucket tidak dapat dihapus karena masih berisi file" };
     }
@@ -65,24 +82,34 @@ export function createBucketsRoutes(
     return { success: true };
   });
 
-  // List Objects in Bucket
+  // List Objects in Bucket (SQL prefix filter)
   router.get("/buckets/:id/objects", async ({ params, query }) => {
     const bucket = db.select().from(buckets).where(eq(buckets.id, params.id)).get();
     if (!bucket) return [];
 
     const prefix = (query.prefix as string) || "";
-    const allObjs = db.select().from(objects).where(eq(objects.bucketId, bucket.id)).all();
+    const condition = prefix
+      ? and(
+          eq(objects.bucketId, bucket.id),
+          sql`substr(${objects.objectKey}, 1, ${prefix.length}) = ${prefix}`
+        )
+      : eq(objects.bucketId, bucket.id);
 
-    return allObjs
-      .filter((o) => o.objectKey.startsWith(prefix))
-      .map((o) => ({
-        id: o.id,
-        key: o.objectKey,
-        size: o.size,
-        etag: o.etag,
-        contentType: o.contentType,
-        updatedAt: o.updatedAt,
-      }));
+    const rows = db
+      .select({
+        id: objects.id,
+        key: objects.objectKey,
+        size: objects.size,
+        etag: objects.etag,
+        contentType: objects.contentType,
+        updatedAt: objects.updatedAt,
+      })
+      .from(objects)
+      .where(condition)
+      .orderBy(asc(objects.objectKey))
+      .all();
+
+    return rows;
   });
 
   // Browser Direct Upload
@@ -262,6 +289,8 @@ export function createBucketsRoutes(
         accessKeyId,
         secretHash,
         label: "Default Presign Key",
+        permissions: "read_write",
+        allowedBuckets: null,
         createdAt: new Date().toISOString(),
       };
       db.insert(s3AccessKeys).values(keyRow).run();

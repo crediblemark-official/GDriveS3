@@ -7,6 +7,7 @@ import { initDatabase } from "../server/db/client";
 import { driveAccounts, s3AccessKeys } from "../server/db/schema";
 import { TokenCipher } from "../server/core/crypto";
 import { GoogleOAuth } from "../server/drive/oauth";
+import { DriveClient } from "../server/drive/client";
 import { Balancer } from "../server/drive/balancer";
 import { S3Engine } from "../server/s3/engine";
 import { createS3Router } from "../server/s3/routes";
@@ -109,9 +110,13 @@ describe("S3 Router & Engine Integration", () => {
   const secretKey = "integration-secret-key-xyz-123";
   const driveFiles = new Map<string, Uint8Array>();
   let fileSeq = 1;
+  let failDeletes = false;
+  let return429Once = false;
   const originalFetch = globalThis.fetch;
 
   beforeAll(async () => {
+    process.env.GDRIVES3_DRIVE_RETRY_BASE_MS = "1";
+    DriveClient.resetTelemetry();
     tempDir = mkdtempSync(join(tmpdir(), "gdrives3-s3-router-test-"));
     const { db } = initDatabase(tempDir, "admin@test.local", "secret123");
     const encKey = Buffer.from(new Uint8Array(32).fill(5)).toString("base64");
@@ -173,6 +178,34 @@ describe("S3 Router & Engine Integration", () => {
       }
 
       if (url.startsWith("https://www.googleapis.com/drive/v3/files?q=")) {
+        const q = new URL(url).searchParams.get("q") || "";
+        if (q.includes("'root-folder-id' in parents") && !q.includes("mimeType =")) {
+          return new Response(
+            JSON.stringify({
+              files: [
+                {
+                  id: "bucket-folder-1",
+                  name: "test-bucket",
+                  mimeType: "application/vnd.google-apps.folder",
+                  size: "0",
+                },
+              ],
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          );
+        }
+        if (q.includes("'bucket-folder-1' in parents")) {
+          const items = Array.from(driveFiles.entries()).map(([id, data]) => ({
+            id,
+            name: id,
+            mimeType: "application/octet-stream",
+            size: String(data.length),
+          }));
+          return new Response(JSON.stringify({ files: items }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
         return new Response(JSON.stringify({ files: [{ id: "bucket-folder-1" }] }), {
           status: 200,
           headers: { "Content-Type": "application/json" },
@@ -180,6 +213,10 @@ describe("S3 Router & Engine Integration", () => {
       }
 
       if (url === "https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable") {
+        if (return429Once) {
+          return429Once = false;
+          return new Response("Rate limit", { status: 429, headers: { "Retry-After": "0" } });
+        }
         const uploadId = `drive-file-${fileSeq++}`;
         return new Response("", {
           status: 200,
@@ -215,6 +252,9 @@ describe("S3 Router & Engine Integration", () => {
       if (fileMatch) {
         const fileId = fileMatch[1];
         if (init?.method === "DELETE") {
+          if (failDeletes) {
+            return new Response("Internal Drive Failure", { status: 500 });
+          }
           driveFiles.delete(fileId);
           return new Response("", { status: 204 });
         }
@@ -410,5 +450,124 @@ describe("S3 Router & Engine Integration", () => {
     );
     expect(getCopyRes.status).toBe(200);
     expect(await getCopyRes.text()).toBe("ABCDEFGHIJ");
+  });
+
+  it("should enforce scoped read-only access keys and verify payload SHA-256", async () => {
+    // Create second bucket via root key
+    await s3Router.handle(
+      await signRequest("PUT", "http://localhost:9000/other-bucket", accessKeyId, secretKey)
+    );
+
+    // Create scoped read-only key for test-bucket only
+    const keyRes = await apiRouter.handle(
+      new Request("http://localhost:8787/api/keys", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: sessionCookie },
+        body: JSON.stringify({
+          label: "Scoped RO",
+          permissions: "read_only",
+          allowedBuckets: ["test-bucket"],
+        }),
+      })
+    );
+    expect(keyRes.status).toBe(200);
+    const roKey = (await keyRes.json()) as { accessKeyId: string; secretKey: string; permissions: string };
+    expect(roKey.permissions).toBe("read_only");
+
+    // Read on allowed bucket succeeds
+    const okGet = await s3Router.handle(
+      await signRequest("GET", "http://localhost:9000/test-bucket/a.txt", roKey.accessKeyId, roKey.secretKey)
+    );
+    expect(okGet.status).toBe(200);
+
+    // ListBuckets only returns test-bucket
+    const listBuckets = await s3Router.handle(
+      await signRequest("GET", "http://localhost:9000/", roKey.accessKeyId, roKey.secretKey)
+    );
+    const listXml = await listBuckets.text();
+    expect(listXml).toContain("<Name>test-bucket</Name>");
+    expect(listXml).not.toContain("<Name>other-bucket</Name>");
+
+    // Write on allowed bucket rejected (403)
+    const blockedPut = await s3Router.handle(
+      await signRequest("PUT", "http://localhost:9000/test-bucket/fail.txt", roKey.accessKeyId, roKey.secretKey, "hi")
+    );
+    expect(blockedPut.status).toBe(403);
+
+    // Read on disallowed bucket rejected (403)
+    const blockedBucket = await s3Router.handle(
+      await signRequest("GET", "http://localhost:9000/other-bucket", roKey.accessKeyId, roKey.secretKey)
+    );
+    expect(blockedBucket.status).toBe(403);
+
+    // Payload SHA-256 mismatch rejected (400)
+    const badShaReq = await signRequest(
+      "PUT",
+      "http://localhost:9000/test-bucket/badsha.txt",
+      accessKeyId,
+      secretKey,
+      "actual-body",
+      { "x-amz-content-sha256": "f".repeat(64) }
+    );
+    const badShaRes = await s3Router.handle(badShaReq);
+    expect(badShaRes.status).toBe(400);
+    expect(await badShaRes.text()).toContain("XAmzContentSHA256Mismatch");
+  });
+
+  it("should retry Drive 429, queue failed deletes, audit Drive orphans, and export SQLite snapshot", async () => {
+    // 1. Trigger 429 retry on upload
+    return429Once = true;
+    const retryPut = await s3Router.handle(
+      await signRequest("PUT", "http://localhost:9000/test-bucket/retry.txt", accessKeyId, secretKey, "retry-ok")
+    );
+    expect(retryPut.status).toBe(200);
+    const tel = DriveClient.getTelemetry();
+    expect(tel.rateLimitHits).toBeGreaterThanOrEqual(1);
+    expect(tel.retryAttempts).toBeGreaterThanOrEqual(1);
+
+    // 2. Force Drive DELETE failure -> queued in pending_drive_deletes -> retry succeeds
+    failDeletes = true;
+    const delRes = await s3Router.handle(
+      await signRequest("DELETE", "http://localhost:9000/test-bucket/retry.txt", accessKeyId, secretKey)
+    );
+    expect(delRes.status).toBe(204);
+
+    const pendingRes = await apiRouter.handle(
+      new Request("http://localhost:8787/api/storage/pending-deletes", { headers: { Cookie: sessionCookie } })
+    );
+    const pendingList = (await pendingRes.json()) as any[];
+    expect(pendingList.length).toBeGreaterThanOrEqual(1);
+
+    failDeletes = false;
+    const retryDelRes = await apiRouter.handle(
+      new Request("http://localhost:8787/api/storage/pending-deletes/retry", {
+        method: "POST",
+        headers: { Cookie: sessionCookie },
+      })
+    );
+    const retryDelData = (await retryDelRes.json()) as { succeeded: number; remaining: number };
+    expect(retryDelData.succeeded).toBeGreaterThanOrEqual(1);
+    expect(retryDelData.remaining).toBe(0);
+
+    // 3. Inject an orphan file in Drive and run Audit
+    driveFiles.set("orphan-drive-file-999", new Uint8Array([1, 2, 3, 4]));
+    const auditRes = await apiRouter.handle(
+      new Request("http://localhost:8787/api/storage/audit", {
+        method: "POST",
+        headers: { Cookie: sessionCookie },
+      })
+    );
+    expect(auditRes.status).toBe(200);
+    const auditData = (await auditRes.json()) as { orphanInDrive: { driveFileId: string }[] };
+    expect(auditData.orphanInDrive.some((o) => o.driveFileId === "orphan-drive-file-999")).toBe(true);
+
+    // 4. Download consistent SQLite snapshot
+    const backupRes = await apiRouter.handle(
+      new Request("http://localhost:8787/api/storage/backup", { headers: { Cookie: sessionCookie } })
+    );
+    expect(backupRes.status).toBe(200);
+    expect(backupRes.headers.get("content-type")).toBe("application/x-sqlite3");
+    const headerStr = new TextDecoder().decode(new Uint8Array(await backupRes.arrayBuffer()).subarray(0, 15));
+    expect(headerStr).toBe("SQLite format 3");
   });
 });

@@ -3,7 +3,9 @@ import type { AppDatabase } from "../db/client";
 import {
   buckets,
   driveAccounts,
+  multipartParts,
   objects,
+  pendingDriveDeletes,
   type ManifestPart,
 } from "../db/schema";
 import type { Balancer } from "../drive/balancer";
@@ -62,7 +64,8 @@ export class S3Engine {
     key: string,
     contentType: string,
     metadata: string,
-    body: ReadableStream
+    body: ReadableStream,
+    expectedSha256?: string
   ): Promise<{ etag: string; size: number }> {
     const bucket = this.db.select().from(buckets).where(eq(buckets.name, bucketName)).get();
     if (!bucket) throw new Error("NoSuchBucket");
@@ -78,13 +81,15 @@ export class S3Engine {
       rootFolderId
     );
 
-    // 3. Transform stream untuk menghitung ETag & byte size secara streaming
+    // 3. Transform stream untuk menghitung ETag, byte size, dan optional SHA-256
     const hasher = new Bun.CryptoHasher("md5");
+    const shaHasher = expectedSha256 ? new Bun.CryptoHasher("sha256") : null;
     let totalBytes = 0;
 
     const transformStream = new TransformStream<Uint8Array, Uint8Array>({
       transform(chunk, controller) {
         hasher.update(chunk);
+        if (shaHasher) shaHasher.update(chunk);
         totalBytes += chunk.byteLength;
         controller.enqueue(chunk);
       },
@@ -102,6 +107,14 @@ export class S3Engine {
       countingStream
     );
 
+    if (expectedSha256 && shaHasher) {
+      const actualSha = shaHasher.digest("hex");
+      if (actualSha !== expectedSha256.toLowerCase()) {
+        await this.deleteDriveFile(account.id, driveFileId, key).catch(() => {});
+        throw new Error("XAmzContentSHA256Mismatch");
+      }
+    }
+
     const etag = hasher.digest("hex");
     const now = new Date().toISOString();
 
@@ -114,7 +127,7 @@ export class S3Engine {
 
     if (existing) {
       if (existing.driveFileId && existing.accountId) {
-        this.deleteDriveFile(existing.accountId, existing.driveFileId).catch(() => {});
+        this.deleteDriveFile(existing.accountId, existing.driveFileId, key).catch(() => {});
       }
       this.db
         .update(objects)
@@ -282,12 +295,14 @@ export class S3Engine {
 
     if (obj.isMultipart && obj.parts) {
       const parts: ManifestPart[] = JSON.parse(obj.parts);
-      for (const p of parts) {
-        this.deleteDriveFile(p.accountId, p.driveFileId).catch(() => {});
-        this.decrementAccountUsage(p.accountId, p.size);
-      }
+      await Promise.all(
+        parts.map(async (p) => {
+          await this.deleteDriveFile(p.accountId, p.driveFileId, key);
+          this.decrementAccountUsage(p.accountId, p.size);
+        })
+      );
     } else if (obj.driveFileId && obj.accountId) {
-      this.deleteDriveFile(obj.accountId, obj.driveFileId).catch(() => {});
+      await this.deleteDriveFile(obj.accountId, obj.driveFileId, key);
       this.decrementAccountUsage(obj.accountId, obj.size || 0);
     }
 
@@ -412,8 +427,8 @@ export class S3Engine {
     return this.multipart.initiate(bucketName, key, contentType, metadata);
   }
 
-  uploadPart(uploadId: string, partNumber: number, body: ReadableStream) {
-    return this.multipart.uploadPart(uploadId, partNumber, body);
+  uploadPart(uploadId: string, partNumber: number, body: ReadableStream, expectedSha256?: string) {
+    return this.multipart.uploadPart(uploadId, partNumber, body, expectedSha256);
   }
 
   completeMultipart(bucketName: string, key: string, uploadId: string) {
@@ -475,12 +490,283 @@ export class S3Engine {
     }
   }
 
-  private async deleteDriveFile(accountId: string, driveFileId: string) {
+  private async deleteDriveFile(accountId: string, driveFileId: string, objectKey?: string) {
     try {
       const { accessToken } = await this.getAccountToken(accountId);
       await DriveClient.deleteFile(accessToken, driveFileId);
-    } catch {
-      // Best effort deletion
+    } catch (err: any) {
+      const now = new Date().toISOString();
+      const errMsg = String(err?.message || "Delete failed");
+      const existing = this.db
+        .select()
+        .from(pendingDriveDeletes)
+        .where(
+          and(
+            eq(pendingDriveDeletes.accountId, accountId),
+            eq(pendingDriveDeletes.driveFileId, driveFileId)
+          )
+        )
+        .get();
+
+      if (existing) {
+        this.db
+          .update(pendingDriveDeletes)
+          .set({
+            attempts: existing.attempts + 1,
+            lastError: errMsg,
+            updatedAt: now,
+          })
+          .where(eq(pendingDriveDeletes.id, existing.id))
+          .run();
+      } else {
+        this.db
+          .insert(pendingDriveDeletes)
+          .values({
+            id: crypto.randomUUID(),
+            accountId,
+            driveFileId,
+            objectKey: objectKey || null,
+            attempts: 1,
+            lastError: errMsg,
+            createdAt: now,
+            updatedAt: now,
+          })
+          .run();
+      }
     }
+  }
+
+  listPendingDeletes() {
+    const rows = this.db.select().from(pendingDriveDeletes).all();
+    const accMap = new Map(
+      this.db
+        .select({ id: driveAccounts.id, email: driveAccounts.email })
+        .from(driveAccounts)
+        .all()
+        .map((a) => [a.id, a.email])
+    );
+    return rows.map((r) => ({
+      ...r,
+      accountEmail: accMap.get(r.accountId) || "(akun terhapus)",
+    }));
+  }
+
+  async retryPendingDeletes(): Promise<{ retried: number; succeeded: number; remaining: number }> {
+    const pending = this.db.select().from(pendingDriveDeletes).all();
+    let succeeded = 0;
+
+    for (const item of pending) {
+      const acc = this.db
+        .select()
+        .from(driveAccounts)
+        .where(eq(driveAccounts.id, item.accountId))
+        .get();
+      if (!acc) {
+        // Akun sudah dihapus dari pool; tidak ada token untuk menghapus file di Drive
+        this.db.delete(pendingDriveDeletes).where(eq(pendingDriveDeletes.id, item.id)).run();
+        succeeded++;
+        continue;
+      }
+
+      try {
+        const { accessToken } = await this.getAccountToken(item.accountId);
+        await DriveClient.deleteFile(accessToken, item.driveFileId);
+        this.db.delete(pendingDriveDeletes).where(eq(pendingDriveDeletes.id, item.id)).run();
+        succeeded++;
+      } catch (err: any) {
+        this.db
+          .update(pendingDriveDeletes)
+          .set({
+            attempts: item.attempts + 1,
+            lastError: String(err?.message || "Retry failed"),
+            updatedAt: new Date().toISOString(),
+          })
+          .where(eq(pendingDriveDeletes.id, item.id))
+          .run();
+      }
+    }
+
+    const remaining = this.db.select().from(pendingDriveDeletes).all().length;
+    return { retried: pending.length, succeeded, remaining };
+  }
+
+  async auditDrivePool() {
+    const accounts = this.db.select().from(driveAccounts).all();
+    const bucketRows = this.db.select().from(buckets).all();
+    const bucketNameMap = new Map(bucketRows.map((b) => [b.id, b.name]));
+    const allObjects = this.db.select().from(objects).all();
+    const allMpParts = this.db.select().from(multipartParts).all();
+    const pendingIds = new Set(
+      this.db
+        .select({ driveFileId: pendingDriveDeletes.driveFileId })
+        .from(pendingDriveDeletes)
+        .all()
+        .map((p) => p.driveFileId)
+    );
+
+    const dbFileIds = new Set<string>();
+    for (const obj of allObjects) {
+      if (obj.driveFileId) dbFileIds.add(obj.driveFileId);
+      if (obj.isMultipart && obj.parts) {
+        try {
+          const parsed: ManifestPart[] = JSON.parse(obj.parts);
+          for (const p of parsed) dbFileIds.add(p.driveFileId);
+        } catch {
+          // ignore malformed json
+        }
+      }
+    }
+    for (const mp of allMpParts) {
+      dbFileIds.add(mp.driveFileId);
+    }
+
+    const foundInDrive = new Map<
+      string,
+      { accountId: string; accountEmail: string; name: string; folderName: string; size: number }
+    >();
+    const scannedAccounts = new Set<string>();
+    const accountErrors: { accountId: string; email: string; error: string }[] = [];
+
+    for (const acc of accounts) {
+      if (!acc.folderId) continue;
+      try {
+        const { accessToken } = await this.getAccountToken(acc.id);
+        const topEntries = await DriveClient.listFolderFiles(accessToken, acc.folderId);
+        scannedAccounts.add(acc.id);
+
+        for (const entry of topEntries) {
+          if (entry.mimeType === "application/vnd.google-apps.folder") {
+            const subFiles = await DriveClient.listFolderFiles(accessToken, entry.id);
+            for (const f of subFiles) {
+              foundInDrive.set(f.id, {
+                accountId: acc.id,
+                accountEmail: acc.email,
+                name: f.name,
+                folderName: entry.name,
+                size: f.size,
+              });
+            }
+          } else {
+            foundInDrive.set(entry.id, {
+              accountId: acc.id,
+              accountEmail: acc.email,
+              name: entry.name,
+              folderName: "(root)",
+              size: entry.size,
+            });
+          }
+        }
+      } catch (err: any) {
+        accountErrors.push({
+          accountId: acc.id,
+          email: acc.email,
+          error: String(err?.message || "Gagal memindai Drive"),
+        });
+      }
+    }
+
+    const orphanInDrive: {
+      accountId: string;
+      accountEmail: string;
+      driveFileId: string;
+      name: string;
+      folderName: string;
+      size: number;
+      isPendingDelete: boolean;
+    }[] = [];
+
+    for (const [driveFileId, info] of foundInDrive.entries()) {
+      if (!dbFileIds.has(driveFileId)) {
+        orphanInDrive.push({
+          ...info,
+          driveFileId,
+          isPendingDelete: pendingIds.has(driveFileId),
+        });
+      }
+    }
+
+    const accountEmailMap = new Map(accounts.map((a) => [a.id, a.email]));
+    const missingInDrive: {
+      objectId: string;
+      bucketName: string;
+      key: string;
+      driveFileId: string;
+      accountEmail: string;
+      size: number;
+    }[] = [];
+
+    for (const obj of allObjects) {
+      const bName = bucketNameMap.get(obj.bucketId) || "(unknown)";
+      if (obj.isMultipart && obj.parts) {
+        try {
+          const parsed: ManifestPart[] = JSON.parse(obj.parts);
+          const missingPart = parsed.find(
+            (p) => scannedAccounts.has(p.accountId) && !foundInDrive.has(p.driveFileId)
+          );
+          if (missingPart) {
+            missingInDrive.push({
+              objectId: obj.id,
+              bucketName: bName,
+              key: obj.objectKey,
+              driveFileId: missingPart.driveFileId,
+              accountEmail: accountEmailMap.get(missingPart.accountId) || missingPart.accountId,
+              size: obj.size,
+            });
+          }
+        } catch {
+          // ignore
+        }
+      } else if (obj.accountId && obj.driveFileId) {
+        if (scannedAccounts.has(obj.accountId) && !foundInDrive.has(obj.driveFileId)) {
+          missingInDrive.push({
+            objectId: obj.id,
+            bucketName: bName,
+            key: obj.objectKey,
+            driveFileId: obj.driveFileId,
+            accountEmail: accountEmailMap.get(obj.accountId) || obj.accountId,
+            size: obj.size,
+          });
+        }
+      }
+    }
+
+    return {
+      scannedAt: new Date().toISOString(),
+      accountsScanned: scannedAccounts.size,
+      accountErrors,
+      driveFilesCount: foundInDrive.size,
+      dbObjectsCount: allObjects.length,
+      missingInDrive,
+      orphanInDrive,
+      pendingDeletesCount: pendingIds.size,
+    };
+  }
+
+  async cleanupAudit(input: {
+    missingObjectIds?: string[];
+    orphanItems?: { accountId: string; driveFileId: string }[];
+  }): Promise<{ removedDbObjects: number; deletedDriveFiles: number }> {
+    let removedDbObjects = 0;
+    let deletedDriveFiles = 0;
+
+    for (const objId of input.missingObjectIds || []) {
+      const row = this.db.select().from(objects).where(eq(objects.id, objId)).get();
+      if (row) {
+        this.db.delete(objects).where(eq(objects.id, objId)).run();
+        removedDbObjects++;
+      }
+    }
+
+    for (const orphan of input.orphanItems || []) {
+      try {
+        const { accessToken } = await this.getAccountToken(orphan.accountId);
+        await DriveClient.deleteFile(accessToken, orphan.driveFileId);
+        deletedDriveFiles++;
+      } catch (err: any) {
+        await this.deleteDriveFile(orphan.accountId, orphan.driveFileId, orphan.driveFileId);
+      }
+    }
+
+    return { removedDbObjects, deletedDriveFiles };
   }
 }

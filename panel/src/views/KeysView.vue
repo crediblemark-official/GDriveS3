@@ -17,7 +17,7 @@
         <thead class="bg-canvas border-b border-subtle text-muted font-mono text-[11px] uppercase tracking-wider">
           <tr>
             <th class="py-3 px-4 sm:px-6 font-semibold">Access Key ID & Label</th>
-            <th class="py-3 px-4 sm:px-6 font-semibold hidden md:table-cell">Label</th>
+            <th class="py-3 px-4 sm:px-6 font-semibold hidden md:table-cell">Akses & Scope</th>
             <th class="py-3 px-4 sm:px-6 font-semibold hidden sm:table-cell">Dibuat Pada</th>
             <th class="py-3 px-4 sm:px-6 font-semibold text-right">Aksi</th>
           </tr>
@@ -36,14 +36,26 @@
                   <AppIcon name="copy" class="w-3.5 h-3.5" />
                 </button>
               </div>
-              <div class="text-[11px] text-muted font-mono flex items-center gap-1.5 mt-0.5 truncate">
-                <span>Label: {{ k.label }}</span>
+              <div class="text-[11px] text-muted font-mono flex items-center flex-wrap gap-1.5 mt-0.5 truncate">
+                <span>{{ k.label }}</span>
+                <span class="md:hidden">&bull;</span>
+                <span class="md:hidden">{{ k.permissions === 'read_only' ? 'Read-Only' : 'Read/Write' }}</span>
                 <span class="sm:hidden">&bull;</span>
                 <span class="sm:hidden">{{ new Date(k.createdAt).toLocaleDateString() }}</span>
               </div>
             </td>
-            <td class="py-3 px-4 sm:px-6 text-xs text-secondary hidden md:table-cell align-middle">
-              {{ k.label }}
+            <td class="py-3 px-4 sm:px-6 text-xs font-mono hidden md:table-cell align-middle space-y-1">
+              <div>
+                <span
+                  class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold border"
+                  :class="k.permissions === 'read_only' ? 'bg-warning-bg text-warning border-warning-border' : 'bg-success-bg text-success border-success-border'"
+                >
+                  {{ k.permissions === 'read_only' ? 'Read-Only' : 'Read / Write' }}
+                </span>
+              </div>
+              <div class="text-[11px] text-muted truncate max-w-[220px]">
+                {{ k.allowedBuckets && k.allowedBuckets.length ? `Bucket: ${k.allowedBuckets.join(', ')}` : 'Semua Bucket' }}
+              </div>
             </td>
             <td class="py-3 px-4 sm:px-6 font-mono text-xs text-muted hidden sm:table-cell align-middle">
               {{ new Date(k.createdAt).toLocaleDateString() }}
@@ -161,15 +173,58 @@
           </button>
         </div>
 
-        <div class="space-y-1.5">
-          <label class="text-xs font-semibold text-secondary">Label / Nama Perangkat</label>
-          <input
-            v-model="newKeyLabel"
-            type="text"
-            placeholder="rclone-backup-vps"
-            @keyup.enter="createKey"
-            class="w-full px-3.5 py-2 text-sm bg-canvas border border-subtle rounded-lg text-primary focus:outline-none focus:border-border-strong focus:ring-2 focus:ring-indigo-500/15 transition-all"
-          />
+        <div class="space-y-3">
+          <div class="space-y-1.5">
+            <label class="text-xs font-semibold text-secondary">Label / Nama Perangkat</label>
+            <input
+              v-model="newKeyLabel"
+              type="text"
+              placeholder="rclone-backup-vps"
+              @keyup.enter="createKey"
+              class="w-full px-3.5 py-2 text-sm bg-canvas border border-subtle rounded-lg text-primary focus:outline-none focus:border-border-strong focus:ring-2 focus:ring-indigo-500/15 transition-all"
+            />
+          </div>
+
+          <div class="space-y-1.5">
+            <label class="text-xs font-semibold text-secondary">Izin Akses</label>
+            <div class="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                @click="newKeyPermissions = 'read_write'"
+                class="px-3 py-1.5 rounded-lg border text-xs font-mono transition-colors"
+                :class="newKeyPermissions === 'read_write' ? 'bg-surface-raised border-strong text-primary font-semibold' : 'bg-canvas border-subtle text-muted'"
+              >
+                Read / Write
+              </button>
+              <button
+                type="button"
+                @click="newKeyPermissions = 'read_only'"
+                class="px-3 py-1.5 rounded-lg border text-xs font-mono transition-colors"
+                :class="newKeyPermissions === 'read_only' ? 'bg-surface-raised border-strong text-primary font-semibold' : 'bg-canvas border-subtle text-muted'"
+              >
+                Read-Only
+              </button>
+            </div>
+          </div>
+
+          <div v-if="bucketOptions.length > 0" class="space-y-1.5">
+            <label class="text-xs font-semibold text-secondary">Batasi Bucket (opsional — kosongkan untuk semua)</label>
+            <div class="max-h-28 overflow-y-auto bg-canvas border border-subtle rounded-lg p-2 space-y-1">
+              <label
+                v-for="b in bucketOptions"
+                :key="b"
+                class="flex items-center gap-2 text-xs font-mono text-secondary cursor-pointer hover:text-primary"
+              >
+                <input
+                  type="checkbox"
+                  :value="b"
+                  v-model="newKeyAllowedBuckets"
+                  class="w-3.5 h-3.5 accent-neutral-900 dark:accent-white"
+                />
+                <span class="truncate">{{ b }}</span>
+              </label>
+            </div>
+          </div>
         </div>
 
         <div class="flex justify-end gap-2 pt-2 border-t border-subtle">
@@ -198,13 +253,20 @@ import { useToast } from "../composables/useToast";
 
 const toast = useToast();
 const keys = ref<any[]>([]);
+const bucketOptions = ref<string[]>([]);
 const showCreateModal = ref(false);
 const newKeyLabel = ref("");
+const newKeyPermissions = ref<"read_write" | "read_only">("read_write");
+const newKeyAllowedBuckets = ref<string[]>([]);
 const createdSecret = ref<{ accessKeyId: string; secretKey: string } | null>(null);
 
 async function loadKeys() {
-  const res = await fetch("/api/keys");
-  if (res.ok) keys.value = await res.json();
+  const [kRes, bRes] = await Promise.all([fetch("/api/keys"), fetch("/api/buckets")]);
+  if (kRes.ok) keys.value = await kRes.json();
+  if (bRes.ok) {
+    const bList = await bRes.json();
+    bucketOptions.value = bList.map((b: any) => b.name);
+  }
 }
 
 function copyKey(val: string) {
@@ -221,7 +283,11 @@ async function createKey() {
   const res = await fetch("/api/keys", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ label: newKeyLabel.value || "Default Key" }),
+    body: JSON.stringify({
+      label: newKeyLabel.value || "Default Key",
+      permissions: newKeyPermissions.value,
+      allowedBuckets: newKeyAllowedBuckets.value.length > 0 ? newKeyAllowedBuckets.value : null,
+    }),
   });
 
   if (res.ok) {
@@ -232,6 +298,8 @@ async function createKey() {
     };
     showCreateModal.value = false;
     newKeyLabel.value = "";
+    newKeyPermissions.value = "read_write";
+    newKeyAllowedBuckets.value = [];
     loadKeys();
   } else {
     toast.error("Gagal membuat Access Key");

@@ -1,15 +1,9 @@
 <template>
   <div class="min-h-screen bg-canvas flex items-center justify-center p-4">
     <div class="w-full max-w-sm bg-surface border border-subtle rounded-2xl p-6 sm:p-8 shadow-sm space-y-6">
-      <!-- Abstract Geometric Logo & Brand -->
+      <!-- Logo & Brand -->
       <div class="flex items-center gap-3">
-        <div class="w-10 h-10 rounded-xl bg-neutral-900 text-white dark:bg-white dark:text-neutral-950 flex items-center justify-center shadow-xs shrink-0">
-          <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M12 2L2 7l10 5 10-5-10-5z" />
-            <path d="M2 17l10 5 10-5" />
-            <path d="M2 12l10 5 10-5" />
-          </svg>
-        </div>
+        <img src="/logo.svg" alt="GDriveS3" class="w-10 h-10 rounded-xl shadow-xs shrink-0" />
         <div>
           <h1 class="font-bold text-base tracking-tight text-primary leading-tight">GDriveS3</h1>
           <p class="text-xs text-muted font-mono leading-tight mt-0.5">S3-over-Drive Panel</p>

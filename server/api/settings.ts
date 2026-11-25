@@ -1,8 +1,13 @@
 import { Elysia } from "elysia";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
+import type { Database } from "bun:sqlite";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+import { readFileSync, unlinkSync } from "node:fs";
 import type { AppDatabase } from "../db/client";
-import { driveAccounts, buckets, objects, systemSettings } from "../db/schema";
+import { driveAccounts, buckets, objects, pendingDriveDeletes, systemSettings } from "../db/schema";
 import type { S3Engine } from "../s3/engine";
+import { DriveClient } from "../drive/client";
 import {
   getWebhookConfig,
   saveWebhookConfig,
@@ -20,27 +25,38 @@ import { resolveS3Endpoint } from "../core/config";
 export function createSettingsRoutes(
   db: AppDatabase,
   engine: S3Engine,
-  opts?: { s3PublicUrl?: string; s3Port?: number }
+  opts?: { s3PublicUrl?: string; s3Port?: number; sqlite?: Database }
 ) {
   const router = new Elysia();
 
-  // Aggregate Stats
+  // Aggregate Stats (SQL aggregation)
   router.get("/stats", async ({ request }) => {
     const accounts = db.select().from(driveAccounts).all();
-    const allBuckets = db.select().from(buckets).all();
-    const allObjects = db.select().from(objects).all();
+    const bucketCountRow = db.select({ count: sql<number>`count(*)` }).from(buckets).get();
+    const objAggRow = db
+      .select({
+        count: sql<number>`count(*)`,
+        totalBytes: sql<number>`coalesce(sum(${objects.size}), 0)`,
+      })
+      .from(objects)
+      .get();
+    const pendingDeletesRow = db
+      .select({ count: sql<number>`count(*)` })
+      .from(pendingDriveDeletes)
+      .get();
 
     const totalStorageLimit = accounts.reduce((acc, a) => acc + (a.storageLimit || 0), 0);
     const totalStorageUsage = accounts.reduce((acc, a) => acc + (a.storageUsage || 0), 0);
-    const totalObjectBytes = allObjects.reduce((acc, o) => acc + (o.size || 0), 0);
 
     return {
       accountsCount: accounts.length,
-      bucketsCount: allBuckets.length,
-      objectsCount: allObjects.length,
+      bucketsCount: Number(bucketCountRow?.count || 0),
+      objectsCount: Number(objAggRow?.count || 0),
       totalStorageLimit,
       totalStorageUsage,
-      totalObjectBytes,
+      totalObjectBytes: Number(objAggRow?.totalBytes || 0),
+      pendingDeletesCount: Number(pendingDeletesRow?.count || 0),
+      driveTelemetry: DriveClient.getTelemetry(),
       s3Endpoint: resolveS3Endpoint(request, opts?.s3PublicUrl, opts?.s3Port),
       accounts: accounts.map((a) => ({
         id: a.id,
@@ -53,14 +69,71 @@ export function createSettingsRoutes(
     };
   });
 
-  // Trigger Storage Garbage Collection
+  // Trigger Storage Garbage Collection (Multipart + Pending Drive Deletes)
   router.post("/storage/gc", async () => {
     const swept = await engine.sweepStaleMultipartUploads(24 * 60 * 60 * 1000);
+    const retried = await engine.retryPendingDeletes();
     return {
       success: true,
       staleUploadsSwept: swept,
-      message: `Pembersihan selesai: ${swept} upload multipart yang kedaluwarsa telah dihapus dari Google Drive.`,
+      pendingDeletesRetried: retried.retried,
+      pendingDeletesSucceeded: retried.succeeded,
+      pendingDeletesRemaining: retried.remaining,
+      message: `Pembersihan selesai: ${swept} upload multipart kedaluwarsa & ${retried.succeeded} antrean hapus Drive dibersihkan.`,
     };
+  });
+
+  // Pending Drive Deletes Queue
+  router.get("/storage/pending-deletes", async () => {
+    return engine.listPendingDeletes();
+  });
+
+  router.post("/storage/pending-deletes/retry", async () => {
+    const res = await engine.retryPendingDeletes();
+    return { success: true, ...res };
+  });
+
+  // Drive <-> SQLite Audit & Reconcile
+  router.post("/storage/audit", async () => {
+    return engine.auditDrivePool();
+  });
+
+  router.post("/storage/audit/cleanup", async ({ body }) => {
+    const payload = (body as {
+      missingObjectIds?: string[];
+      orphanItems?: { accountId: string; driveFileId: string }[];
+    }) || {};
+    const res = await engine.cleanupAudit(payload);
+    return { success: true, ...res };
+  });
+
+  // Consistent SQLite Snapshot Backup (VACUUM INTO)
+  router.get("/storage/backup", async ({ set }) => {
+    const sqlite = opts?.sqlite ?? ((db as any).$client as Database | undefined);
+    if (!sqlite) {
+      set.status = 500;
+      return { error: "SQLite handle tidak tersedia" };
+    }
+    const snapPath = join(tmpdir(), `gdrives3-snap-${crypto.randomUUID()}.db`);
+    try {
+      sqlite.run(`VACUUM INTO '${snapPath.replace(/'/g, "''")}'`);
+      const bytes = readFileSync(snapPath);
+      const dateStr = new Date().toISOString().slice(0, 10);
+      return new Response(bytes, {
+        status: 200,
+        headers: {
+          "Content-Type": "application/x-sqlite3",
+          "Content-Disposition": `attachment; filename="gdrives3-backup-${dateStr}.db"`,
+          "Content-Length": String(bytes.byteLength),
+        },
+      });
+    } finally {
+      try {
+        unlinkSync(snapPath);
+      } catch {
+        // ignore cleanup error
+      }
+    }
   });
 
   // Get Current Balancing Strategy

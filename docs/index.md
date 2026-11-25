@@ -5,6 +5,9 @@ hero:
   name: "GDriveS3"
   text: "Object Storage over Google Drive"
   tagline: Pool multiple Google Drive accounts into a lightweight, encrypted, Bun-powered AWS S3-compatible API endpoint.
+  image:
+    src: /logo.svg
+    alt: GDriveS3
   actions:
     - theme: brand
       text: User Guide
